@@ -128,7 +128,7 @@ def load_config(path: Path | None = None) -> Config:
         poids = replace(poids, **{champ: int(valeur) if champ == "k" else float(valeur)})
 
     seconds_per_track_brut = raw.get("seconds_per_track", 120)
-    if not isinstance(seconds_per_track_brut, int) or isinstance(seconds_per_track_brut, bool):
+    if not isinstance(seconds_per_track_brut, int):
         raise ConfigError("seconds_per_track doit être un nombre entier strictement positif")
     if seconds_per_track_brut <= 0:
         raise ConfigError("seconds_per_track doit être strictement positif")

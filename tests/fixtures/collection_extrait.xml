@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Fixture fabriquée à la main pour la tâche 1 : aucun export Rekordbox réel n'était
+     disponible au moment de l'écrire. Elle n'a jamais été confrontée à un vrai export
+     et ne doit pas être prise pour une référence du format tant que la sonde
+     tools/inspect_collection.py n'a pas tourné sur un export réel de Nina. -->
+<DJ_PLAYLISTS Version="1.0.0">
+    <PRODUCT Name="rekordbox" Version="6.7.7" Company="AlphaTheta"/>
+    <COLLECTION Entries="10">
+        <TRACK TrackID="1" Name="Warehouse Nights" Artist="Nina Voss" Album="Late Sessions" Genre="House / Techno" TotalTime="365" AverageBpm="122.00" Tonality="Am" Comments="/* House / Techno / dansant */" Location="file://localhost/Users/nina/Music/hardset-fixtures/warehouse-nights.mp3" DateAdded="2024-03-12" Rating="153" PlayCount="12" Kind="MP3 File" Size="14602240" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="2" Name="Concrete Pulse" Artist="Rax Delta" Album="Concrete EP" Genre="Techno" TotalTime="401" AverageBpm="145.00" Tonality="8A" Comments="/* Techno / dansant / vénère */" Location="file://localhost/Users/nina/Music/hardset-fixtures/concrete-pulse.mp3" DateAdded="2024-05-02" Rating="102" PlayCount="4" Kind="MP3 File" Size="16041984" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="3" Name="Industrial Corridor" Artist="Mira Cast" Album="Corridor" Genre="Techno / Industrial" TotalTime="352" AverageBpm="132.00" Tonality="F#m" Comments="/* Techno / Industrial */" Location="file://localhost/Users/nina/Music/hardset-fixtures/industrial-corridor.mp3" DateAdded="2024-01-20" Rating="0" PlayCount="1" Kind="MP3 File" Size="14090240" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="4" Name="Slow Drift" Artist="Owen Marle" Album="Drift" Genre="Ambient" TotalTime="410" AverageBpm="110.00" Tonality="" Comments="/* Ambient / calme */" Location="file://localhost/Users/nina/Music/hardset-fixtures/slow-drift.mp3" DateAdded="2023-11-08" Rating="204" PlayCount="20" Kind="WAV File" Size="72351744" BitRate="1411" SampleRate="44100"/>
+        <TRACK TrackID="5" Name="Buildup Theory" Artist="Nina Voss" Album="Late Sessions" Genre="House" TotalTime="298" AverageBpm="128.00" Tonality="C" Comments="Belle montée en intro /* House / un peu vénère */" Location="file://localhost/Users/nina/Music/hardset-fixtures/buildup-theory.mp3" DateAdded="2024-06-15" Rating="153" PlayCount="7" Kind="MP3 File" Size="11923456" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="6" Name="Hardcore Vector" Artist="Rax Delta" Album="Vectors" Genre="Techno / Hardcore" TotalTime="330" AverageBpm="150.00" Tonality="11B" Comments="/* Techno / Hardcore / vénère */" Location="file://localhost/Users/nina/Music/hardset-fixtures/hardcore-vector.mp3" DateAdded="2024-02-27" Rating="255" PlayCount="30" Kind="MP3 File" Size="13271040" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="7" Name="Riot Signal" Artist="Mira Cast" Album="Signal" Genre="Hardcore" TotalTime="288" AverageBpm="175.00" Tonality="1m" Comments="/* Hardcore / c'est du bruit */" Location="file://localhost/Users/nina/Music/hardset-fixtures/riot-signal.mp3" DateAdded="2024-04-09" Rating="102" PlayCount="3" Kind="MP3 File" Size="11616256" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="8" Name="Low Tide" Artist="Owen Marle" Album="Drift" Genre="Downtempo" TotalTime="345" AverageBpm="112.00" Tonality="6d" Comments="/* Downtempo / calme */" Location="file://localhost/Users/nina/Music/hardset-fixtures/low-tide.mp3" DateAdded="2023-12-01" Rating="153" PlayCount="9" Kind="MP3 File" Size="13905920" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="9" Name="Mirror Groove" Artist="Nina Voss" Album="Late Sessions" Genre="Disco / Funk" TotalTime="312" AverageBpm="118.00" Tonality="F#m" Comments="/* Disco / Funk / dansant */" Location="file://localhost/Users/nina/Music/hardset-fixtures/mirror-groove.mp3" DateAdded="2024-07-19" Rating="204" PlayCount="15" Kind="MP3 File" Size="12492800" BitRate="320" SampleRate="44100"/>
+        <TRACK TrackID="10" Name="Horizon Line" Artist="Mira Cast" Album="Horizon" Genre="Trance / Progressive" TotalTime="382" AverageBpm="140.00" Tonality="8A" Comments="/* Trance / Progressive / un peu vénère */" Location="file://localhost/Users/nina/Music/hardset-fixtures/horizon-line.mp3" DateAdded="2024-08-01" Rating="51" PlayCount="2" Kind="MP3 File" Size="15319040" BitRate="320" SampleRate="44100"/>
+    </COLLECTION>
+    <PLAYLISTS>
+        <NODE Type="0" Name="ROOT" Count="0"/>
+    </PLAYLISTS>
+</DJ_PLAYLISTS>

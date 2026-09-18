@@ -74,6 +74,20 @@ class Config:
         return None
 
 
+def _nombre(valeur: Any, chemin: str, caster: type) -> Any:
+    """Convertit `valeur` avec `caster` (int ou float) ou lève une `ConfigError` explicite.
+
+    Un booléen est explicitement refusé : `bool` est une sous-classe d'`int` en
+    Python, donc `int(True)` ou `float(False)` réussiraient silencieusement.
+    """
+    if isinstance(valeur, bool):
+        raise ConfigError(f"{chemin} : un booléen n'est pas une valeur numérique valide")
+    try:
+        return caster(valeur)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{chemin} : valeur numérique attendue, reçu {valeur!r}") from exc
+
+
 def _curve(raw: Any, chemin: str) -> CurveSpec:
     if not isinstance(raw, dict) or "type" not in raw:
         raise ConfigError(f"{chemin} : une courbe doit être un objet avec un 'type'")
@@ -81,7 +95,11 @@ def _curve(raw: Any, chemin: str) -> CurveSpec:
     if type_ not in CURVE_PARAMS:
         connus = ", ".join(sorted(CURVE_PARAMS))
         raise ConfigError(f"{chemin} : type de courbe '{type_}' inconnu (attendu : {connus})")
-    params = {k: float(v) for k, v in raw.items() if k != "type"}
+    params = {
+        cle: _nombre(valeur, f"{chemin}.{cle}", float)
+        for cle, valeur in raw.items()
+        if cle != "type"
+    }
     inconnus = set(params) - CURVE_PARAMS[type_]
     if inconnus:
         raise ConfigError(f"{chemin} : paramètres inconnus pour '{type_}' : {sorted(inconnus)}")
@@ -102,33 +120,48 @@ def load_config(path: Path | None = None) -> Config:
     except yaml.YAMLError as exc:
         raise ConfigError(f"YAML illisible dans {chemin} : {exc}") from exc
 
-    moods = tuple(str(m) for m in raw.get("moods") or ())
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"la racine de {chemin} doit être un mapping (clé: valeur), pas {type(raw).__name__}"
+        )
+
+    moods_raw = raw.get("moods") or ()
+    if isinstance(moods_raw, str) or not isinstance(moods_raw, (list, tuple)):
+        raise ConfigError("moods doit être une liste de chaînes, pas une valeur unique")
+    moods = tuple(str(m) for m in moods_raw)
     if not moods:
         raise ConfigError("la configuration doit définir au moins un mood")
     if len(moods) > MOOD_MAX:
         raise ConfigError(f"l'échelle de mood est limitée à {MOOD_MAX} valeurs, {len(moods)} fournies")
 
     profils_raw = raw.get("profils") or {}
+    if not isinstance(profils_raw, dict):
+        raise ConfigError("profils doit être un mapping (clé: profil)")
     if not profils_raw:
         raise ConfigError("la configuration doit définir au moins un profil")
-    profils = {
-        cle: Profile(
+    profils: dict[str, Profile] = {}
+    for cle, corps in profils_raw.items():
+        if not isinstance(corps, dict):
+            raise ConfigError(f"profils.{cle} doit être un mapping avec 'label', 'bpm' et 'mood'")
+        profils[cle] = Profile(
             key=cle,
             label=str(corps.get("label", cle)),
             bpm=_curve(corps.get("bpm"), f"profils.{cle}.bpm"),
             mood=_curve(corps.get("mood"), f"profils.{cle}.mood"),
         )
-        for cle, corps in profils_raw.items()
-    }
 
+    poids_raw = raw.get("poids") or {}
+    if not isinstance(poids_raw, dict):
+        raise ConfigError("poids doit être un mapping (clé: valeur)")
     poids = Weights()
-    for champ, valeur in (raw.get("poids") or {}).items():
+    for champ, valeur in poids_raw.items():
         if not hasattr(poids, champ):
             raise ConfigError(f"poids.{champ} : poids inconnu")
-        poids = replace(poids, **{champ: int(valeur) if champ == "k" else float(valeur)})
+        caster = int if champ == "k" else float
+        poids = replace(poids, **{champ: _nombre(valeur, f"poids.{champ}", caster)})
 
     seconds_per_track_brut = raw.get("seconds_per_track", 120)
-    if not isinstance(seconds_per_track_brut, int):
+    if isinstance(seconds_per_track_brut, bool) or not isinstance(seconds_per_track_brut, int):
         raise ConfigError("seconds_per_track doit être un nombre entier strictement positif")
     if seconds_per_track_brut <= 0:
         raise ConfigError("seconds_per_track doit être strictement positif")

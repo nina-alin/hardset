@@ -107,3 +107,159 @@ def test_seconds_per_track_invalide_refuse(tmp_path):
     )
     with pytest.raises(ConfigError, match="seconds_per_track"):
         load_config(fichier)
+
+
+def _ecrit(tmp_path, nom, contenu):
+    fichier = tmp_path / nom
+    fichier.write_text(contenu, encoding="utf-8")
+    return fichier
+
+
+def test_seconds_per_track_non_entier_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "non_entier.yaml",
+        "moods: [a, b]\n"
+        "seconds_per_track: 1.5\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="seconds_per_track"):
+        load_config(fichier)
+
+
+def test_seconds_per_track_booleen_true_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "booleen_true.yaml",
+        "moods: [a, b]\n"
+        "seconds_per_track: true\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="seconds_per_track"):
+        load_config(fichier)
+
+
+def test_seconds_per_track_booleen_false_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "booleen_false.yaml",
+        "moods: [a, b]\n"
+        "seconds_per_track: false\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="seconds_per_track"):
+        load_config(fichier)
+
+
+# --- Durcissement de la validation ---------------------------------------
+
+def test_racine_non_mapping_refuse(tmp_path):
+    fichier = _ecrit(tmp_path, "racine_liste.yaml", "- a\n- b\n")
+    with pytest.raises(ConfigError, match="mapping"):
+        load_config(fichier)
+
+
+def test_moods_chaine_unique_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "moods_chaine.yaml",
+        "moods: calme\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="moods"):
+        load_config(fichier)
+
+
+def test_moods_non_sequence_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "moods_mapping.yaml",
+        "moods: {a: 1}\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="moods"):
+        load_config(fichier)
+
+
+def test_profils_non_mapping_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "profils_liste.yaml",
+        "moods: [a, b]\n"
+        "profils: [p]\n",
+    )
+    with pytest.raises(ConfigError, match="profils"):
+        load_config(fichier)
+
+
+def test_profil_entree_non_mapping_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "profil_texte.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p: juste du texte\n",
+    )
+    with pytest.raises(ConfigError, match="profils.p"):
+        load_config(fichier)
+
+
+def test_poids_non_mapping_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "poids_liste.yaml",
+        "moods: [a, b]\n"
+        "poids: [1, 2]\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids"):
+        load_config(fichier)
+
+
+def test_poids_valeur_non_numerique_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "poids_texte.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  mood: pas-un-nombre\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.mood"):
+        load_config(fichier)
+
+
+def test_poids_valeur_booleenne_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "poids_booleen.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  k: true\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.k"):
+        load_config(fichier)
+
+
+def test_parametre_de_courbe_non_numerique_refuse(tmp_path):
+    fichier = _ecrit(
+        tmp_path,
+        "courbe_texte.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p:\n"
+        "    label: P\n"
+        "    bpm: {type: lineaire, depart: pas-un-nombre}\n"
+        "    mood: {type: lineaire}\n",
+    )
+    with pytest.raises(ConfigError, match="profils.p.bpm.depart"):
+        load_config(fichier)

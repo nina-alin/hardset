@@ -1,0 +1,42 @@
+# Configuration du générateur de sets. Ajouter un profil ne demande aucune
+# modification de code.
+
+# Chemin de l'export XML proposé par défaut dans le formulaire.
+collection_xml: ~/rekordbox.xml
+
+# Durée moyenne jouée par morceau (en secondes), utilisée pour convertir la
+# durée demandée du set en nombre de morceaux.
+seconds_per_track: 120
+
+# L'ordre définit l'échelle ordinale 1 → 5.
+moods:
+  - calme
+  - dansant
+  - un peu vénère
+  - vénère
+  - c'est du bruit
+
+poids:
+  bpm: 1.0
+  mood: 1.5
+  tonalite: 0.4
+  bpm_tolerance: 5.0   # un écart de 5 BPM coûte 1 unité avant pondération
+  k: 5                 # largeur du tirage aléatoire
+
+profils:
+  montee:
+    label: "Montée"
+    bpm:  {type: lineaire}
+    mood: {type: lineaire}
+  warmup-long:
+    label: "Warm-up long"
+    bpm:  {type: retarde, palier: 0.4}
+    mood: {type: retarde, palier: 0.4}
+  plateau:
+    label: "Plateau"
+    bpm:  {type: lineaire, depart: 0.7}
+    mood: {type: lineaire, depart: 0.7}
+  vagues:
+    label: "Vagues"
+    bpm:  {type: vagues, amplitude: 0.15, oscillations: 2.5}
+    mood: {type: lineaire}

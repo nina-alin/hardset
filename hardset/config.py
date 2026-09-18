@@ -26,6 +26,12 @@ class ConfigError(Exception):
     """Configuration illisible ou incohérente."""
 
 
+# Formulation partagée par tous les refus de type, pour que le même problème
+# (un booléen là où un nombre est attendu) produise toujours le même message,
+# quel que soit le champ concerné.
+MESSAGE_BOOLEEN = "un booléen n'est pas une valeur numérique valide"
+
+
 @dataclass(frozen=True)
 class CurveSpec:
     """Une courbe de progression : un type et ses paramètres."""
@@ -81,11 +87,28 @@ def _nombre(valeur: Any, chemin: str, caster: type) -> Any:
     Python, donc `int(True)` ou `float(False)` réussiraient silencieusement.
     """
     if isinstance(valeur, bool):
-        raise ConfigError(f"{chemin} : un booléen n'est pas une valeur numérique valide")
+        raise ConfigError(f"{chemin} : {MESSAGE_BOOLEEN}")
     try:
         return caster(valeur)
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"{chemin} : valeur numérique attendue, reçu {valeur!r}") from exc
+
+
+def _entier(valeur: Any, chemin: str) -> int:
+    """Convertit `valeur` en entier strict, sans arrondi silencieux.
+
+    Comme `_nombre`, un booléen est refusé. Un flottant qui n'est pas une
+    valeur entière (`5.5`) est également refusé plutôt que tronqué par
+    `int()`, qui l'aurait accepté sans le dire.
+    """
+    if isinstance(valeur, bool):
+        raise ConfigError(f"{chemin} : {MESSAGE_BOOLEEN}")
+    if isinstance(valeur, float) and not valeur.is_integer():
+        raise ConfigError(f"{chemin} : valeur entière attendue, reçu {valeur!r}")
+    try:
+        return int(valeur)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{chemin} : valeur entière attendue, reçu {valeur!r}") from exc
 
 
 def _curve(raw: Any, chemin: str) -> CurveSpec:
@@ -117,6 +140,8 @@ def load_config(path: Path | None = None) -> Config:
         raw = yaml.safe_load(chemin.read_text(encoding="utf-8")) or {}
     except FileNotFoundError as exc:
         raise ConfigError(f"configuration introuvable : {chemin}") from exc
+    except (IsADirectoryError, PermissionError) as exc:
+        raise ConfigError(f"configuration illisible : {chemin} ({exc})") from exc
     except yaml.YAMLError as exc:
         raise ConfigError(f"YAML illisible dans {chemin} : {exc}") from exc
 
@@ -141,6 +166,8 @@ def load_config(path: Path | None = None) -> Config:
         raise ConfigError("la configuration doit définir au moins un profil")
     profils: dict[str, Profile] = {}
     for cle, corps in profils_raw.items():
+        if not isinstance(cle, str):
+            raise ConfigError(f"profils : les clés doivent être des chaînes, reçu {cle!r}")
         if not isinstance(corps, dict):
             raise ConfigError(f"profils.{cle} doit être un mapping avec 'label', 'bpm' et 'mood'")
         profils[cle] = Profile(
@@ -155,22 +182,33 @@ def load_config(path: Path | None = None) -> Config:
         raise ConfigError("poids doit être un mapping (clé: valeur)")
     poids = Weights()
     for champ, valeur in poids_raw.items():
+        if not isinstance(champ, str):
+            raise ConfigError(f"poids : les clés doivent être des chaînes, reçu {champ!r}")
         if not hasattr(poids, champ):
             raise ConfigError(f"poids.{champ} : poids inconnu")
-        caster = int if champ == "k" else float
-        poids = replace(poids, **{champ: _nombre(valeur, f"poids.{champ}", caster)})
+        if champ == "k":
+            poids = replace(poids, k=_entier(valeur, f"poids.{champ}"))
+        else:
+            poids = replace(poids, **{champ: _nombre(valeur, f"poids.{champ}", float)})
 
     seconds_per_track_brut = raw.get("seconds_per_track", 120)
-    if isinstance(seconds_per_track_brut, bool) or not isinstance(seconds_per_track_brut, int):
-        raise ConfigError("seconds_per_track doit être un nombre entier strictement positif")
+    if isinstance(seconds_per_track_brut, bool):
+        raise ConfigError(f"seconds_per_track : {MESSAGE_BOOLEEN}")
+    if not isinstance(seconds_per_track_brut, int):
+        raise ConfigError(
+            f"seconds_per_track : valeur entière attendue, reçu {seconds_per_track_brut!r}"
+        )
     if seconds_per_track_brut <= 0:
-        raise ConfigError("seconds_per_track doit être strictement positif")
+        raise ConfigError("seconds_per_track : doit être strictement positif")
 
     collection = raw.get("collection_xml")
+    if collection is not None and not isinstance(collection, str):
+        raise ConfigError(f"collection_xml : chaîne attendue, reçu {collection!r}")
+
     return Config(
         moods=moods,
         profils=profils,
         poids=poids,
-        collection_xml=str(collection) if collection else None,
+        collection_xml=collection if collection else None,
         seconds_per_track=seconds_per_track_brut,
     )

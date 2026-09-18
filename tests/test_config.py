@@ -424,3 +424,164 @@ def test_messages_de_refus_de_type_harmonises(tmp_path):
     phrase_poids = str(erreur_poids.value).split(" : ", 1)[1]
     phrase_seconds = str(erreur_seconds.value).split(" : ", 1)[1]
     assert phrase_poids == phrase_seconds
+
+
+# --- Troisième revue : balayage exhaustif ---------------------------------
+
+def test_fichier_avec_segment_non_repertoire_refuse(tmp_path):
+    """Un chemin dont un segment intermédiaire est un fichier (et non un
+    répertoire) ne doit pas faire remonter de `NotADirectoryError` brute."""
+    segment_fichier = tmp_path / "pas_un_dossier"
+    segment_fichier.write_text("x", encoding="utf-8")
+    chemin_impossible = segment_fichier / "hardset.yaml"
+    with pytest.raises(ConfigError, match="illisible"):
+        load_config(chemin_impossible)
+
+
+def test_fichier_non_utf8_refuse(tmp_path):
+    """Un fichier enregistré en latin-1 (accents français mal encodés) ne
+    doit pas faire remonter d'`UnicodeDecodeError` brute : elle hérite de
+    `ValueError`, pas d'`OSError`, donc un `except OSError` ne l'attraperait
+    pas."""
+    fichier = tmp_path / "latin1.yaml"
+    contenu = (
+        "moods: [calme, dansant, \"un peu vénère\"]\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n"
+    )
+    fichier.write_bytes(contenu.encode("latin-1"))
+    with pytest.raises(ConfigError, match="illisible"):
+        load_config(fichier)
+
+
+@pytest.mark.parametrize(
+    "yaml_element",
+    ["null", "true", "5", "{x: 1}", "[1, 2]"],
+)
+def test_moods_element_non_chaine_refuse(tmp_path, yaml_element):
+    """Un élément non scalaire ou non textuel dans `moods` ne doit pas être
+    coercé en douce par `str(...)` (même défaut que `collection_xml`)."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_element.yaml",
+        f"moods: [calme, {yaml_element}]\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="moods"):
+        load_config(fichier)
+
+
+def test_label_non_scalaire_refuse(tmp_path):
+    """`label` doit rester une chaîne, pas un mapping transformé en texte
+    absurde par `str(...)` (même défaut que `collection_xml` et `moods`)."""
+    fichier = _ecrit(
+        tmp_path,
+        "label_mapping.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p:\n"
+        "    label: {x: 1}\n"
+        "    bpm: {type: lineaire}\n"
+        "    mood: {type: lineaire}\n",
+    )
+    with pytest.raises(ConfigError, match="profils.p.label"):
+        load_config(fichier)
+
+
+def test_moods_falsy_refuse(tmp_path):
+    """`moods: 0` est une valeur fausse au sens Python : l'idiome `... or ()`
+    la ferait passer pour une absence de clé au lieu d'être rejetée pour
+    mauvais type."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_falsy.yaml",
+        "moods: 0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="moods"):
+        load_config(fichier)
+
+
+def test_profils_falsy_refuse(tmp_path):
+    """Même défaut que `moods`/`poids` pour `profils: 0`."""
+    fichier = _ecrit(
+        tmp_path,
+        "profils_falsy.yaml",
+        "moods: [a, b]\nprofils: 0\n",
+    )
+    with pytest.raises(ConfigError, match="profils"):
+        load_config(fichier)
+
+
+def test_poids_falsy_refuse(tmp_path):
+    """`poids: 0` est une valeur fausse au sens Python : l'idiome `... or {}`
+    la ferait passer pour « aucune surcharge » au lieu d'être rejetée pour
+    mauvais type."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_falsy.yaml",
+        "moods: [a, b]\n"
+        "poids: 0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids"):
+        load_config(fichier)
+
+
+def test_seconds_per_track_flottant_entier_accepte(tmp_path):
+    """`seconds_per_track` doit passer par `_entier`, qui accepte un flottant
+    exactement entier (`120.0`), comme `poids.k` le fait déjà. L'ancienne
+    validation manuelle rejetait ce cas alors que `_entier` l'accepte : c'est
+    la divergence de comportement que la factorisation doit éliminer."""
+    fichier = _ecrit(
+        tmp_path,
+        "seconds_flottant_entier.yaml",
+        "moods: [a, b]\n"
+        "seconds_per_track: 120.0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    config = load_config(fichier)
+    assert config.seconds_per_track == 120
+
+
+def test_courbe_parametre_cle_non_chaine_refuse(tmp_path):
+    """Des clés de paramètres de courbe de types incompatibles entre eux
+    (un entier et une chaîne, par exemple) ne doivent pas faire remonter de
+    `TypeError` brute depuis `sorted(...)` lors du calcul des paramètres
+    inconnus."""
+    fichier = _ecrit(
+        tmp_path,
+        "courbe_cle_mixte.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p:\n"
+        "    label: P\n"
+        "    bpm: {type: lineaire, depart: 1, 5: 2, autre: 3}\n"
+        "    mood: {type: lineaire}\n",
+    )
+    with pytest.raises(ConfigError, match="profils.p.bpm"):
+        load_config(fichier)
+
+
+@pytest.mark.parametrize("champ_special", ["__class__", "__init__", "__dict__"])
+def test_poids_champ_special_python_refuse(tmp_path, champ_special):
+    """Un nom de champ correspondant à un attribut spécial de Python
+    (`__class__`, `__init__`, `__dict__`) existe forcément sur toute
+    instance : `hasattr(poids, champ)` le laisserait passer, et
+    `dataclasses.replace(...)` planterait ensuite avec une `TypeError` brute
+    au lieu d'une `ConfigError` nommant le champ inconnu."""
+    fichier = _ecrit(
+        tmp_path,
+        f"poids_special_{champ_special.strip('_')}.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        f"  {champ_special}: 5\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids"):
+        load_config(fichier)

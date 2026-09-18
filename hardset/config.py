@@ -6,7 +6,7 @@ profil ou renommer un mood ne demande pas de toucher au code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,14 @@ class Weights:
     tonalite: float = 0.4
     bpm_tolerance: float = 5.0
     k: int = 5
+
+
+# Noms de champs réels de `Weights`, pour valider `poids.<champ>` sans passer
+# par `hasattr` : `hasattr(poids, "__class__")` ou `hasattr(poids, "__init__")`
+# répondrait `True` (ce sont des attributs de tout objet Python), ce qui
+# laisserait passer une clé de configuration invalide jusqu'à
+# `dataclasses.replace`, où elle ferait remonter une `TypeError` brute.
+_CHAMPS_POIDS = frozenset(champ.name for champ in fields(Weights))
 
 
 @dataclass(frozen=True)
@@ -118,11 +126,20 @@ def _curve(raw: Any, chemin: str) -> CurveSpec:
     if type_ not in CURVE_PARAMS:
         connus = ", ".join(sorted(CURVE_PARAMS))
         raise ConfigError(f"{chemin} : type de courbe '{type_}' inconnu (attendu : {connus})")
+    for cle in raw:
+        if cle != "type" and not isinstance(cle, str):
+            raise ConfigError(
+                f"{chemin} : les clés de paramètres doivent être des chaînes, reçu {cle!r}"
+            )
     params = {
         cle: _nombre(valeur, f"{chemin}.{cle}", float)
         for cle, valeur in raw.items()
         if cle != "type"
     }
+    # `inconnus` peut mélanger des types si des clés inattendues coexistent ;
+    # la vérification ci-dessus les a déjà rejetées, donc `sorted(...)` ne
+    # verra plus jamais que des chaînes ici (sinon `sorted` lèverait une
+    # `TypeError` brute en comparant par exemple un `int` et une chaîne).
     inconnus = set(params) - CURVE_PARAMS[type_]
     if inconnus:
         raise ConfigError(f"{chemin} : paramètres inconnus pour '{type_}' : {sorted(inconnus)}")
@@ -140,8 +157,15 @@ def load_config(path: Path | None = None) -> Config:
         raw = yaml.safe_load(chemin.read_text(encoding="utf-8")) or {}
     except FileNotFoundError as exc:
         raise ConfigError(f"configuration introuvable : {chemin}") from exc
-    except (IsADirectoryError, PermissionError) as exc:
+    except (IsADirectoryError, NotADirectoryError, PermissionError) as exc:
         raise ConfigError(f"configuration illisible : {chemin} ({exc})") from exc
+    except UnicodeDecodeError as exc:
+        # Hérite de `ValueError`, pas d'`OSError` : un `except OSError` ne
+        # l'attraperait pas. Cas réaliste avec les accents français du
+        # fichier livré, si un éditeur mal réglé l'enregistre en latin-1.
+        raise ConfigError(
+            f"configuration illisible : {chemin} n'est pas de l'UTF-8 valide ({exc})"
+        ) from exc
     except yaml.YAMLError as exc:
         raise ConfigError(f"YAML illisible dans {chemin} : {exc}") from exc
 
@@ -150,16 +174,23 @@ def load_config(path: Path | None = None) -> Config:
             f"la racine de {chemin} doit être un mapping (clé: valeur), pas {type(raw).__name__}"
         )
 
-    moods_raw = raw.get("moods") or ()
+    # `.get(cle, defaut)` et non `.get(cle) or defaut` : `moods: 0` est une
+    # valeur fausse au sens Python, et l'idiome `or` la ferait passer pour
+    # une absence de clé au lieu d'être rejetée pour mauvais type juste après.
+    moods_raw = raw.get("moods", ())
     if isinstance(moods_raw, str) or not isinstance(moods_raw, (list, tuple)):
         raise ConfigError("moods doit être une liste de chaînes, pas une valeur unique")
-    moods = tuple(str(m) for m in moods_raw)
+    for element in moods_raw:
+        if not isinstance(element, str):
+            raise ConfigError(f"moods : chaque élément doit être une chaîne, reçu {element!r}")
+    moods = tuple(moods_raw)
     if not moods:
         raise ConfigError("la configuration doit définir au moins un mood")
     if len(moods) > MOOD_MAX:
         raise ConfigError(f"l'échelle de mood est limitée à {MOOD_MAX} valeurs, {len(moods)} fournies")
 
-    profils_raw = raw.get("profils") or {}
+    # Même remarque que pour `moods` : `.get(cle, defaut)`, pas `or defaut`.
+    profils_raw = raw.get("profils", {})
     if not isinstance(profils_raw, dict):
         raise ConfigError("profils doit être un mapping (clé: profil)")
     if not profils_raw:
@@ -170,35 +201,37 @@ def load_config(path: Path | None = None) -> Config:
             raise ConfigError(f"profils : les clés doivent être des chaînes, reçu {cle!r}")
         if not isinstance(corps, dict):
             raise ConfigError(f"profils.{cle} doit être un mapping avec 'label', 'bpm' et 'mood'")
+        label_brut = corps.get("label", cle)
+        if not isinstance(label_brut, str):
+            raise ConfigError(f"profils.{cle}.label : chaîne attendue, reçu {label_brut!r}")
         profils[cle] = Profile(
             key=cle,
-            label=str(corps.get("label", cle)),
+            label=label_brut,
             bpm=_curve(corps.get("bpm"), f"profils.{cle}.bpm"),
             mood=_curve(corps.get("mood"), f"profils.{cle}.mood"),
         )
 
-    poids_raw = raw.get("poids") or {}
+    # Même remarque que pour `moods`/`profils` : `.get(cle, defaut)`, pas
+    # `or defaut` — `poids: 0` ne doit pas passer pour « aucune surcharge ».
+    poids_raw = raw.get("poids", {})
     if not isinstance(poids_raw, dict):
         raise ConfigError("poids doit être un mapping (clé: valeur)")
     poids = Weights()
     for champ, valeur in poids_raw.items():
         if not isinstance(champ, str):
             raise ConfigError(f"poids : les clés doivent être des chaînes, reçu {champ!r}")
-        if not hasattr(poids, champ):
+        if champ not in _CHAMPS_POIDS:
             raise ConfigError(f"poids.{champ} : poids inconnu")
         if champ == "k":
             poids = replace(poids, k=_entier(valeur, f"poids.{champ}"))
         else:
             poids = replace(poids, **{champ: _nombre(valeur, f"poids.{champ}", float)})
 
-    seconds_per_track_brut = raw.get("seconds_per_track", 120)
-    if isinstance(seconds_per_track_brut, bool):
-        raise ConfigError(f"seconds_per_track : {MESSAGE_BOOLEEN}")
-    if not isinstance(seconds_per_track_brut, int):
-        raise ConfigError(
-            f"seconds_per_track : valeur entière attendue, reçu {seconds_per_track_brut!r}"
-        )
-    if seconds_per_track_brut <= 0:
+    # Passe par `_entier`, comme `poids.k` : même comportement (refus des
+    # booléens, acceptation d'un flottant exactement entier comme `120.0`)
+    # plutôt qu'une validation manuelle divergente.
+    seconds_per_track = _entier(raw.get("seconds_per_track", 120), "seconds_per_track")
+    if seconds_per_track <= 0:
         raise ConfigError("seconds_per_track : doit être strictement positif")
 
     collection = raw.get("collection_xml")
@@ -210,5 +243,5 @@ def load_config(path: Path | None = None) -> Config:
         profils=profils,
         poids=poids,
         collection_xml=collection if collection else None,
-        seconds_per_track=seconds_per_track_brut,
+        seconds_per_track=seconds_per_track,
     )

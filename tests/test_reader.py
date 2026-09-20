@@ -7,6 +7,7 @@ export réel. `tools/inspect_collection.py` est la sonde prévue pour confronter
 hypothèse à un export réel dès qu'on en aura un.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,10 @@ FIXTURE = Path(__file__).parent / "fixtures" / "collection_extrait.xml"
         (None, ()),
         ("/* */", ()),
         ("/* Hardcore / / vénère */", ("Hardcore", "vénère")),
+        # Plusieurs blocs : seul le premier est extrait (regex .search, non .findall)
+        ("/* Hardcore / Uptempo */ texte /* Frenchcore / calme */", ("Hardcore", "Uptempo")),
+        # Bloc non fermé : aucun tag n'est extrait (fermeture `*/` manquante)
+        ("/* Hardcore sans fermeture", ()),
     ],
 )
 def test_parse_my_tags(comments, attendu):
@@ -195,6 +200,10 @@ def test_chemin_est_un_repertoire(tmp_path):
         read_collection(tmp_path, load_config())
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="test non applicable quand exécuté en root : chmod ne bloque pas la lecture",
+)
 def test_fichier_sans_droit_de_lecture(tmp_path):
     chemin = tmp_path / "prive.xml"
     chemin.write_text("<DJ_PLAYLISTS/>", encoding="utf-8")

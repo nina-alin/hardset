@@ -1,7 +1,9 @@
 """Tests des routes de l'API. La page elle-même n'est pas testée (spec §12)."""
 
+import os
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import quote
 from xml.etree import ElementTree
 
 import pytest
@@ -278,7 +280,11 @@ def test_export_renvoie_un_xml_telechargeable(client, collection_xml):
 
     assert reponse.status_code == 200
     assert reponse.headers["content-type"].startswith("application/xml")
-    assert "Mon set.xml" in reponse.headers["content-disposition"]
+    # Deux noms annoncés : un `filename` ASCII assaini et le nom complet en
+    # UTF-8 percent-encodé (RFC 5987), cf. `_content_disposition`.
+    disposition = reponse.headers["content-disposition"]
+    assert 'filename="mon-set.xml"' in disposition
+    assert "filename*=UTF-8''Mon%20set.xml" in disposition
 
     racine = ElementTree.fromstring(reponse.content)
     cles = [t.get("Key") for t in racine.findall("PLAYLISTS/NODE/NODE/TRACK")]
@@ -293,3 +299,87 @@ def test_export_dun_id_inconnu_renvoie_400(client, collection_xml):
         json={"path": str(collection_xml), "track_ids": ["9999"], "playlist_name": "S"},
     )
     assert reponse.status_code == 400
+
+
+# --- En-tête de téléchargement de l'export -------------------------------
+# Starlette encode les en-têtes HTTP en latin-1 : un nom de playlist contenant
+# un caractère hors de cette table (« œ », « € », un emoji) faisait lever une
+# `UnicodeEncodeError` non interceptée, donc un 500, sur un nom français
+# ordinaire (cœur, sœur, nœud). Le nom de fichier réellement vu par
+# l'utilisatrice vient de l'attribut `download` du lien, côté JavaScript.
+
+@pytest.mark.parametrize("nom", ["cœur", "Set 100€", "set 🔥"])
+def test_export_avec_un_nom_hors_latin_1(client, collection_xml, nom):
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+
+    reponse = client.post(
+        "/api/export",
+        json={"path": str(collection_xml), "track_ids": ids, "playlist_name": nom},
+    )
+
+    assert reponse.status_code == 200
+    disposition = reponse.headers["content-disposition"]
+    disposition.encode("latin-1")            # échouerait avant la correction
+    assert "filename*=UTF-8''" in disposition
+    # Le nom complet reste transporté, percent-encodé selon la RFC 5987.
+    assert quote(f"{nom}.xml", safe="") in disposition
+
+
+def test_export_avec_un_nom_contenant_un_saut_de_ligne(client, collection_xml):
+    # Un saut de ligne dans un en-tête est rejeté par le serveur HTTP réel
+    # (découpage d'en-tête) : il ne doit jamais s'y retrouver tel quel.
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+
+    reponse = client.post(
+        "/api/export",
+        json={"path": str(collection_xml), "track_ids": ids, "playlist_name": "set\nmalin"},
+    )
+
+    assert reponse.status_code == 200
+    disposition = reponse.headers["content-disposition"]
+    assert "\n" not in disposition and "\r" not in disposition
+    assert ElementTree.fromstring(reponse.content).find("PLAYLISTS/NODE/NODE").get("Name") == (
+        "set\nmalin"
+    )
+
+
+def test_export_dun_nom_entierement_non_ascii_garde_un_filename_utilisable(
+    client, collection_xml
+):
+    # « 🔥 » ne laisse aucun caractère ASCII : le `filename` de repli ne doit pas
+    # être vide, sans quoi l'en-tête annoncerait un fichier sans nom.
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+    reponse = client.post(
+        "/api/export",
+        json={"path": str(collection_xml), "track_ids": ids, "playlist_name": "🔥"},
+    )
+    assert 'filename="set.xml"' in reponse.headers["content-disposition"]
+
+
+# --- Message d'erreur de lecture -----------------------------------------
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="test non applicable en root : chmod ne bloque pas la traversée",
+)
+def test_collection_sans_droit_daces_ne_dit_pas_introuvable(client, tmp_path):
+    # `stat()` sur un fichier logé dans un répertoire non traversable lève une
+    # `PermissionError` : le lecteur distingue déjà ce cas de l'absence, la
+    # route doit le distinguer aussi.
+    dossier = tmp_path / "prive"
+    dossier.mkdir()
+    chemin = dossier / "collection.xml"
+    chemin.write_text("<DJ_PLAYLISTS/>", encoding="utf-8")
+    dossier.chmod(0o000)
+    try:
+        reponse = client.post("/api/collection", json={"path": str(chemin)})
+    finally:
+        dossier.chmod(0o755)
+
+    assert reponse.status_code == 400
+    detail = reponse.json()["detail"]
+    assert "introuvable" not in detail
+    assert "lire" in detail

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -20,7 +21,7 @@ from hardset.engine.curves import build_targets
 from hardset.engine.sequencing import SequencingError, generate, replace_at
 from hardset.model import MOOD_MAX, MOOD_MIN, GeneratedSet, SetRequest, Track
 from hardset.rekordbox.reader import Collection, CollectionError, read_collection
-from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name
+from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name, slug
 
 STATIC = Path(__file__).parent / "static"
 
@@ -120,6 +121,24 @@ def _set_payload(generated: GeneratedSet, collection: Collection, request: SetRe
     }
 
 
+def _content_disposition(nom: str) -> str:
+    """En-tête de téléchargement pour un nom de playlist quelconque.
+
+    Starlette encode les en-têtes en latin-1 : interpoler le nom saisi tel quel
+    faisait échouer la route sur « cœur » ou « 100 € », et un saut de ligne y
+    serait refusé par un vrai serveur HTTP. On annonce donc deux noms : un
+    `filename` ASCII assaini (`slug`), compris de tous les clients, et un
+    `filename*` en UTF-8 percent-encodé (RFC 5987) qui porte le nom complet.
+    Le nom de fichier réellement enregistré vient de l'attribut `download` du
+    lien, côté page : cet en-tête n'est qu'un filet de sécurité.
+    """
+    ascii_nom = slug(nom) or "set"
+    return (
+        f'attachment; filename="{ascii_nom}.xml"; '
+        f"filename*=UTF-8''{quote(f'{nom}.xml', safe='')}"
+    )
+
+
 def create_app(config: Config) -> FastAPI:
     app = FastAPI(title="hardset", docs_url=None, redoc_url=None)
 
@@ -132,6 +151,14 @@ def create_app(config: Config) -> FastAPI:
         try:
             chemin = Path(chemin_brut).expanduser()
             cle = (str(chemin.resolve()), chemin.stat().st_mtime)
+        except PermissionError as exc:
+            # Avant `OSError` : un fichier existant mais inaccessible (ou logé
+            # dans un répertoire non traversable) n'est pas un fichier absent.
+            # Le lecteur fait déjà cette distinction ; la route doit la faire
+            # aussi, sans quoi l'utilisatrice cherche un fichier qui est là.
+            raise HTTPException(
+                status_code=400, detail=f"impossible de lire {chemin} : {exc}"
+            ) from exc
         except OSError as exc:
             # `expanduser()` ne lève jamais d'`OSError` : à ce stade `chemin`
             # est nécessairement défini, seule `resolve()`/`stat()` a échoué.
@@ -244,7 +271,7 @@ def create_app(config: Config) -> FastAPI:
         return Response(
             content=build_playlist_xml(tracks, nom),
             media_type="application/xml",
-            headers={"content-disposition": f'attachment; filename="{nom}.xml"'},
+            headers={"content-disposition": _content_disposition(nom)},
         )
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

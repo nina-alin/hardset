@@ -24,16 +24,20 @@ from xml.etree import ElementTree
 from hardset.model import SetRequest, Track, normalize_tag
 
 
-def _slug(value: str) -> str:
-    """Forme utilisable dans un nom de fichier : sans accent, sans espace."""
+def slug(value: str) -> str:
+    """Forme utilisable dans un nom de fichier : ASCII, sans accent, sans espace.
+
+    Publique : la couche web s'en sert aussi pour bâtir le `filename` ASCII de
+    l'en-tête `content-disposition` de l'export, qui ne tolère rien d'autre.
+    """
     return re.sub(r"[^a-z0-9]+", "-", normalize_tag(value)).strip("-")
 
 
 def default_playlist_name(request: SetRequest, today: date | None = None) -> str:
     """Nom proposé dans le formulaire : `{genres}-{profil}-{durée}min-{date}`."""
     jour = today or date.today()
-    genres = "-".join(sorted(_slug(g) for g in request.genres)) if request.genres else "tous"
-    return f"{genres}-{_slug(request.profile)}-{request.duration_min}min-{jour.isoformat()}"
+    genres = "-".join(sorted(slug(g) for g in request.genres)) if request.genres else "tous"
+    return f"{genres}-{slug(request.profile)}-{request.duration_min}min-{jour.isoformat()}"
 
 
 def build_playlist_xml(tracks: Sequence[Track], playlist_name: str) -> bytes:

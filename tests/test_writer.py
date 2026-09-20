@@ -1,5 +1,6 @@
 """Tests de l'export XML : structure DJ_PLAYLISTS et intégrité des références."""
 
+from dataclasses import replace
 from datetime import date
 from xml.etree import ElementTree
 
@@ -203,3 +204,49 @@ def test_nom_par_defaut_avec_un_genre_vide():
 def test_nom_par_defaut_sans_date_utilise_la_date_du_jour():
     nom = default_playlist_name(requete())
     assert nom == f"tous-montee-90min-{date.today().isoformat()}"
+
+
+# --- Enfants du nœud TRACK ------------------------------------------------
+# Beatgrid (`<TEMPO>`) et points de repère (`<POSITION_MARK>`) sont les données
+# les plus coûteuses à reconstituer pour une DJ : elles se refont à la main,
+# morceau par morceau. Le spec (§5) demande que tout le nœud `TRACK` soit
+# recopié intégralement à l'export.
+
+ENFANTS = (
+    '<TEMPO Inizio="0.025" Bpm="160.00" Metro="4/4" Battito="1" />',
+    '<POSITION_MARK Name="Drop" Type="0" Start="90.025" Num="0" '
+    'Red="40" Green="226" Blue="20" />',
+)
+
+
+def test_enfants_dorigine_recopies_sans_perte():
+    track = replace(piste("1"), raw_children=ENFANTS)
+    noeud = ElementTree.fromstring(build_playlist_xml([track], "S")).find("COLLECTION/TRACK")
+
+    tempos = noeud.findall("TEMPO")
+    marques = noeud.findall("POSITION_MARK")
+    assert [t.attrib for t in tempos] == [
+        {"Inizio": "0.025", "Bpm": "160.00", "Metro": "4/4", "Battito": "1"}
+    ]
+    assert [m.attrib for m in marques] == [
+        {
+            "Name": "Drop",
+            "Type": "0",
+            "Start": "90.025",
+            "Num": "0",
+            "Red": "40",
+            "Green": "226",
+            "Blue": "20",
+        }
+    ]
+
+
+def test_enfants_conserves_dans_lordre_dorigine():
+    track = replace(piste("1"), raw_children=ENFANTS)
+    noeud = ElementTree.fromstring(build_playlist_xml([track], "S")).find("COLLECTION/TRACK")
+    assert [enfant.tag for enfant in noeud] == ["TEMPO", "POSITION_MARK"]
+
+
+def test_track_sans_enfant_reste_un_noeud_vide():
+    noeud = ElementTree.fromstring(build_playlist_xml([piste("1")], "S")).find("COLLECTION/TRACK")
+    assert list(noeud) == []

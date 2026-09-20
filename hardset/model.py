@@ -31,6 +31,13 @@ class Track:
 
     `raw_attrs` porte l'intégralité des attributs du nœud TRACK d'origine : l'export
     les recopie sans les comprendre, ce qui évite toute perte d'information.
+
+    `raw_children` porte de la même façon ses nœuds enfants — beatgrid (`TEMPO`)
+    et points de repère (`POSITION_MARK`) — sous forme de fragments sérialisés,
+    opaques : le modèle ne les interprète pas plus qu'il n'interprète les
+    attributs, il les transporte pour que l'export les restitue. Ce sont les
+    données les plus coûteuses à reconstituer pour une DJ : elles se refont à la
+    main, morceau par morceau.
     """
 
     id: str
@@ -43,6 +50,7 @@ class Track:
     genres: tuple[str, ...] = ()
     mood: int | None = None
     raw_attrs: dict[str, str] = field(default_factory=dict, compare=False)
+    raw_children: tuple[str, ...] = field(default=(), compare=False)
 
     @property
     def label(self) -> str:

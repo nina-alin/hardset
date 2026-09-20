@@ -2,15 +2,18 @@
 
 D'après la documentation du format, Rekordbox exige que tout morceau référencé
 dans une playlist figure dans le bloc COLLECTION du même fichier. Les nœuds TRACK
-sont donc recopiés depuis `raw_attrs`, sans aucune modification : l'outil n'a pas
-à comprendre les attributs Rekordbox pour les restituer.
+sont donc recopiés depuis `raw_attrs` et `raw_children`, sans aucune
+modification : attributs, beatgrid (`TEMPO`) et points de repère
+(`POSITION_MARK`) sont restitués tels qu'ils ont été lus, sans que l'outil ait à
+les comprendre. Les seuls nœuds TRACK reconstruits sont ceux dont `raw_attrs`
+est vide, c'est-à-dire ceux qui ne viennent pas d'un export lu.
 
 Hypothèse non vérifiée, elle aussi tirée de la documentation du format : l'import
 serait additif, et supprimer ensuite la playlist importée ne laisserait aucune
 trace dans la collection Rekordbox. Aucun fichier produit par ce module n'a jamais
 été réimporté dans Rekordbox : cette hypothèse n'a donc jamais été confrontée à un
-import réel. L'import réel est prévu en tâche 12 ; c'est à ce moment-là qu'elle
-sera vérifiée.
+import réel, à aucune étape du projet. La vérifier demande un vrai Rekordbox et
+reste entièrement à faire.
 """
 
 from __future__ import annotations
@@ -54,7 +57,7 @@ def build_playlist_xml(tracks: Sequence[Track], playlist_name: str) -> bytes:
     )
 
     # COLLECTION : les nœuds d'origine, dédoublonnés, dans l'ordre de première
-    # apparition. `raw_attrs` est recopié tel quel.
+    # apparition. `raw_attrs` et `raw_children` sont recopiés tels quels.
     uniques: dict[str, Track] = {}
     for track in tracks:
         uniques.setdefault(track.id, track)
@@ -69,7 +72,11 @@ def build_playlist_xml(tracks: Sequence[Track], playlist_name: str) -> bytes:
             "TotalTime": str(track.duration_s),
             "Location": track.location,
         }
-        ElementTree.SubElement(collection, "TRACK", attrs)
+        noeud = ElementTree.SubElement(collection, "TRACK", attrs)
+        # Beatgrid et points de repère du nœud d'origine : réinjectés dans
+        # l'ordre, sans être relus ni corrigés.
+        for enfant in track.raw_children:
+            noeud.append(ElementTree.fromstring(enfant))
 
     playlists = ElementTree.SubElement(racine, "PLAYLISTS")
     noeud_racine = ElementTree.SubElement(
@@ -86,8 +93,8 @@ def build_playlist_xml(tracks: Sequence[Track], playlist_name: str) -> bytes:
     # Déclaration écrite à la main, en guillemets doubles : celle que produit
     # `ElementTree` (xml_declaration=True) utilise des guillemets simples, valides
     # mais inhabituels dans les fichiers XML réels. Le parseur de Rekordbox nous est
-    # inconnu et ne pourra être testé qu'à la tâche 12 : autant coller à la forme la
-    # plus courante, à coût nul.
+    # inconnu et n'a été éprouvé à aucune étape du projet : autant coller à la forme
+    # la plus courante, à coût nul.
     tampon = io.BytesIO()
     ElementTree.ElementTree(racine).write(tampon, encoding="UTF-8", xml_declaration=False)
     return b'<?xml version="1.0" encoding="UTF-8"?>\n' + tampon.getvalue()

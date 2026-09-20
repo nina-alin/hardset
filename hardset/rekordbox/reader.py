@@ -88,6 +88,22 @@ class Collection:
         return (min(bpms), max(bpms)) if bpms else (0.0, 0.0)
 
 
+def _enfants(noeud: ElementTree.Element) -> tuple[str, ...]:
+    """Nœuds enfants d'un TRACK, sérialisés tels quels.
+
+    Un vrai export porte sous chaque TRACK sa beatgrid (`TEMPO`) et ses points
+    de repère (`POSITION_MARK`) : ils ne sont pas interprétés, seulement
+    transportés jusqu'à l'export, qui doit rendre le nœud intact. La queue
+    (`tail`) de chaque enfant, qui n'est que l'indentation du fichier lu, est
+    écartée pour ne pas être recopiée dans le fichier produit.
+    """
+    fragments: list[str] = []
+    for enfant in noeud:
+        enfant.tail = None
+        fragments.append(ElementTree.tostring(enfant, encoding="unicode"))
+    return tuple(fragments)
+
+
 def read_collection(path: Path, config: Config) -> Collection:
     """Lit l'export XML et classe les tags de chaque morceau en genres et mood.
 
@@ -158,6 +174,7 @@ def read_collection(path: Path, config: Config) -> Collection:
                 genres=tuple(genres),
                 mood=mood,
                 raw_attrs=attrs,
+                raw_children=_enfants(noeud),
             )
         )
 

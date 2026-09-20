@@ -258,3 +258,36 @@ def test_lecture_complete_de_la_fixture_couvre_tous_les_cas():
     assert len(collection.tracks) >= 8
     assert any(t.mood is not None and t.genres for t in collection.tracks)
     assert collection.genres
+
+
+# --- Enfants du nœud TRACK ------------------------------------------------
+
+def test_enfants_du_noeud_track_conserves(tmp_path):
+    chemin = ecrire_xml(
+        tmp_path,
+        '<TRACK TrackID="1" Name="T" Artist="A" AverageBpm="160" Tonality="Am"'
+        ' TotalTime="300" Location="file://x" Comments="/* Hardcore / vénère */">'
+        '<TEMPO Inizio="0.025" Bpm="160.00" Metro="4/4" Battito="1"/>'
+        '<POSITION_MARK Name="Drop" Type="0" Start="90.025" Num="0"/>'
+        '</TRACK>',
+    )
+    track = read_collection(chemin, load_config()).tracks[0]
+    assert len(track.raw_children) == 2
+    assert "TEMPO" in track.raw_children[0]
+    assert "POSITION_MARK" in track.raw_children[1]
+
+
+def test_track_sans_enfant_na_pas_denfant(tmp_path):
+    chemin = ecrire_xml(
+        tmp_path,
+        '<TRACK TrackID="1" Name="T" Artist="A" AverageBpm="160" Tonality="Am"'
+        ' TotalTime="300" Location="file://x" Comments="/* Hardcore / vénère */"/>',
+    )
+    assert read_collection(chemin, load_config()).tracks[0].raw_children == ()
+
+
+def test_la_fixture_porte_un_morceau_avec_beatgrid_et_reperes():
+    collection = read_collection(FIXTURE, load_config())
+    track = next(t for t in collection.tracks if t.id == "11")
+    assert sum("TEMPO" in enfant for enfant in track.raw_children) == 2
+    assert sum("POSITION_MARK" in enfant for enfant in track.raw_children) == 2

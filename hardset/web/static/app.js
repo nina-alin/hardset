@@ -217,6 +217,11 @@ async function remplacer(index, bouton) {
 
 async function supprimer(index, bouton) {
   state.set.tracks.splice(index, 1);
+  // Rendu immédiat : sans lui, le tableau affiche encore les anciennes lignes
+  // — avec les anciens index capturés dans leurs gestionnaires de clic —
+  // pendant tout l'aller-retour serveur qui suit, et un clic sur une autre
+  // ligne pendant cette fenêtre agirait alors sur le mauvais morceau.
+  render();
   // Les cibles appartiennent au serveur, qui les redistribue sur la nouvelle
   // longueur. Les tronquer ici afficherait une courbe cible fausse — plus basse
   // que l'obtenu, donnant à voir un dépassement de BPM qui n'existe pas — et
@@ -225,8 +230,8 @@ async function supprimer(index, bouton) {
   await proteger(bouton, async () => {
     const reponse = await api('/api/targets', requete({ count: state.set.tracks.length }));
     state.set.targets = (await reponse.json()).targets;
+    render();
   });
-  render();
 }
 
 function deplacer(index, delta) {

@@ -471,6 +471,17 @@ def test_cibles_longueur_negative_renvoie_400(client, collection_xml):
     assert reponse.status_code == 400
 
 
+def test_cibles_longueur_excessive_renvoie_400(client, collection_xml):
+    # `count` pilote une boucle non bornée : sans plafond, une faute de frappe
+    # ou une régression du JavaScript fige le serveur (mesuré : count=2000000
+    # rend un 200 en 5,7 s pour 141 Mo de réponse). Toutes les autres routes
+    # sont de fait bornées par la taille de la collection ; celle-ci ne doit
+    # pas rester la seule sans limite.
+    reponse = client.post("/api/targets", json=corps(collection_xml, count=2_000_000))
+    assert reponse.status_code == 400
+    assert "count" in reponse.json()["detail"]
+
+
 def test_cibles_profil_inconnu_message_identique_a_la_generation(client, collection_xml):
     reponse_generation = client.post(
         "/api/generate", json=corps(collection_xml, profile="inexistant")

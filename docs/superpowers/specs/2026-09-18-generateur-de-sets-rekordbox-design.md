@@ -89,11 +89,12 @@ est un SVG dessiné directement en JavaScript.
 | `location` | `Location` | recopié tel quel à l'export |
 | `genres` | My Tags | liste, éventuellement vide |
 | `mood` | My Tags | valeur unique 1→5, `None` si absente |
-| `raw_attrs` | tout le nœud `TRACK` | recopié intégralement à l'export |
+| `raw_attrs` | attributs du nœud `TRACK` | recopiés intégralement à l'export |
+| `raw_children` | nœuds enfants du `TRACK` — beatgrid (`TEMPO`), points de repère (`POSITION_MARK`) | fragments sérialisés, recopiés tels quels à l'export |
 
-`raw_attrs` est conservé pour que l'export puisse reproduire le nœud `TRACK` d'origine
-sans perte : l'outil n'a pas à comprendre tous les attributs Rekordbox pour les
-restituer.
+`raw_attrs` et `raw_children` sont conservés pour que l'export puisse reproduire le
+nœud `TRACK` d'origine sans perte : l'outil n'a pas à comprendre tous les attributs
+ni tous les nœuds enfants Rekordbox pour les restituer.
 
 ### Mood
 

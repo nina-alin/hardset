@@ -63,8 +63,13 @@ def main() -> int:
     )
     # Sans `--config`, `load_config` choisit elle-même : le `hardset.yaml` du
     # répertoire courant, sinon celui livré avec le paquet.
-    parseur.add_argument("--config", type=Path, default=None,
-                         help=f"fichier de configuration (défaut : {DEFAULT_CONFIG_PATH})")
+    parseur.add_argument(
+        "--config", type=Path, default=None,
+        help=(
+            f"fichier de configuration (défaut : {DEFAULT_CONFIG_PATH} du "
+            "répertoire courant, sinon celui livré avec le paquet)"
+        ),
+    )
     parseur.add_argument("--host", default="127.0.0.1", help="interface d'écoute")
     parseur.add_argument("--port", type=int, default=8765, help="port d'écoute")
     parseur.add_argument("--no-browser", action="store_true",

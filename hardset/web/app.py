@@ -30,6 +30,17 @@ from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name, 
 
 STATIC = Path(__file__).parent / "static"
 
+# Plafond de `count` sur `/api/targets` (revue finale). Les autres routes sont
+# de fait bornées par la taille de la collection chargée (`generate` fait
+# `min(vise, len(pool))`) ; cette route-ci ne charge délibérément aucune
+# collection, puisque les cibles n'en dépendent pas (voir `cibles` ci-dessous),
+# donc cette borne ne peut pas être la même. On fixe à la place un plafond
+# arbitraire mais très généreux : aucune collection Rekordbox réaliste
+# n'approche cent mille morceaux, et le calcul à cette taille reste rapide
+# (mesuré : ~0,2 s, ~7 Mo de réponse), là où deux millions produisait un blocage
+# de plusieurs secondes.
+TARGETS_COUNT_MAX = 100_000
+
 
 class CollectionPayload(BaseModel):
     path: str
@@ -308,6 +319,11 @@ def create_app(config: Config) -> FastAPI:
         if payload.count < 0:
             raise HTTPException(
                 status_code=400, detail="count doit être positif ou nul"
+            )
+        if payload.count > TARGETS_COUNT_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"count ne peut pas dépasser {TARGETS_COUNT_MAX}",
             )
         return {
             "targets": [

@@ -104,6 +104,7 @@ def test_collection_chemin_avec_octet_nul_renvoie_400(client):
     # il remontait en 500 brut jusqu'à Starlette.
     reponse = client.post("/api/collection", json={"path": "foo\x00bar"})
     assert reponse.status_code == 400
+    assert "chemin invalide" in reponse.json()["detail"]
 
 
 def test_collection_repertoire_renvoie_400(client, tmp_path):

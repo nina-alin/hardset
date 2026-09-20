@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import threading
 import time
 import webbrowser
@@ -12,6 +13,28 @@ import uvicorn
 
 from hardset.config import ConfigError, DEFAULT_CONFIG_PATH, load_config
 from hardset.web.app import create_app
+
+
+def _erreur_si_port_occupe(host: str, port: int) -> OSError | None:
+    """Tente de lier une socket sur `host`:`port`, renvoie l'erreur le cas échéant.
+
+    Vérifié nous-mêmes *avant* d'appeler `uvicorn.run()` : en pratique, uvicorn
+    intercepte lui-même l'`OSError` de bind, la journalise en anglais sur
+    `stderr` et quitte via `sys.exit(3)` depuis son propre code — elle ne
+    remonte jamais jusqu'à un `except OSError` posé autour de `serveur.run()`.
+    """
+    essai = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # SO_REUSEADDR comme le fait uvicorn (via asyncio) pour lier son propre
+    # port : sans ça, un port juste relâché (état TIME_WAIT) serait signalé
+    # occupé ici alors qu'uvicorn saurait s'y lier sans problème.
+    essai.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        essai.bind((host, port))
+    except OSError as exc:
+        return exc
+    finally:
+        essai.close()
+    return None
 
 
 def _ouvrir_quand_pret(
@@ -54,6 +77,18 @@ def main() -> int:
         print(f"Configuration illisible : {exc}")
         return 1
 
+    erreur_port = _erreur_si_port_occupe(args.host, args.port)
+    if erreur_port is not None:
+        # Cas ordinaire : relancer l'outil alors qu'une instance tourne déjà sur
+        # ce port. L'utilisatrice doit voir une phrase qui lui dit quoi faire,
+        # pas une trace Python — et surtout pas celle, en anglais, d'uvicorn.
+        print(
+            f"Impossible d'écouter sur le port {args.port} : {erreur_port}. "
+            "Une autre instance de hardset tourne peut-être déjà sur ce port : "
+            "relancez avec --port pour en choisir un autre."
+        )
+        return 1
+
     url = f"http://{args.host}:{args.port}/"
     serveur = uvicorn.Server(
         uvicorn.Config(
@@ -71,16 +106,6 @@ def main() -> int:
     print(f"hardset écoute sur {url}")
     try:
         serveur.run()
-    except OSError as exc:
-        # Cas ordinaire : relancer l'outil alors qu'une instance tourne déjà sur
-        # ce port. L'utilisatrice doit voir une phrase qui lui dit quoi faire,
-        # pas une trace Python.
-        print(
-            f"Impossible d'écouter sur le port {args.port} : {exc}. "
-            "Une autre instance de hardset tourne peut-être déjà sur ce port : "
-            "relancez avec --port pour en choisir un autre."
-        )
-        return 1
     finally:
         fini.set()
     return 0

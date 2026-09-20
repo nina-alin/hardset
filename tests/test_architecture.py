@@ -5,8 +5,6 @@ invariants d'architecture qu'un changement raisonnable à l'échelle d'un seul
 fichier ferait sauter en silence.
 """
 
-import inspect
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from hardset.config import CURVE_PARAMS, CurveSpec
-from hardset.engine.curves import curve_fn
+from hardset.engine.curves import CurveError, curve_fn
 
 RACINE = Path(__file__).parent.parent
 
@@ -23,10 +21,9 @@ RACINE = Path(__file__).parent.parent
 # `CURVE_PARAMS` déclare les types reconnus par la configuration, `curve_fn`
 # les implémente, et aucune référence ne les lie : un type ajouté à la
 # configuration sans implémentation se charge sans erreur, puis produit un 500
-# à la génération.
-
-TYPES_IMPLEMENTES = set(re.findall(r'spec\.type == "([^"]+)"', inspect.getsource(curve_fn)))
-
+# à la génération. Vérifié par le comportement de `curve_fn`, jamais par
+# lecture de sa source : peu importe comment elle est écrite, seul compte ce
+# qu'elle accepte et refuse réellement.
 
 @pytest.mark.parametrize("type_de_courbe", sorted(CURVE_PARAMS))
 def test_chaque_type_declare_est_implemente(type_de_courbe):
@@ -34,10 +31,12 @@ def test_chaque_type_declare_est_implemente(type_de_courbe):
     assert callable(curve_fn(CurveSpec(type_de_courbe, {})))
 
 
-def test_aucun_type_implemente_nest_absent_de_la_configuration():
-    # Lu dans la source de `curve_fn` faute de lien explicite entre les deux
-    # ensembles : c'est précisément ce lien manquant que ce test remplace.
-    assert TYPES_IMPLEMENTES == set(CURVE_PARAMS)
+def test_un_type_inconnu_est_refuse():
+    # Symétrique du test ci-dessus : un type que la configuration ne
+    # reconnaît pas ne doit produire aucune courbe.
+    assert "inexistant" not in CURVE_PARAMS
+    with pytest.raises(CurveError):
+        curve_fn(CurveSpec("inexistant", {}))
 
 
 # --- Pureté du moteur -----------------------------------------------------

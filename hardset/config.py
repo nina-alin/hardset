@@ -68,6 +68,13 @@ class Weights:
 # `dataclasses.replace`, où elle ferait remonter une `TypeError` brute.
 _CHAMPS_POIDS = frozenset(champ.name for champ in fields(Weights))
 
+# Clés admises à la racine du fichier, et dans le corps d'un profil. Une
+# liste blanche fermée, sur le modèle de `_CHAMPS_POIDS` : `hardset.yaml`
+# est édité à la main, et une faute de frappe (`seconds_per_tracks`,
+# `labell`) ne doit jamais se charger en silence.
+_CHAMPS_RACINE = frozenset({"moods", "profils", "poids", "seconds_per_track", "collection_xml"})
+_CHAMPS_PROFIL = frozenset({"label", "bpm", "mood"})
+
 
 @dataclass(frozen=True)
 class Config:
@@ -88,16 +95,16 @@ class Config:
         return None
 
 
-def _nombre(valeur: Any, chemin: str, caster: type) -> Any:
-    """Convertit `valeur` avec `caster` (int ou float) ou lève une `ConfigError` explicite.
+def _nombre(valeur: Any, chemin: str) -> float:
+    """Convertit `valeur` en `float` ou lève une `ConfigError` explicite.
 
     Un booléen est explicitement refusé : `bool` est une sous-classe d'`int` en
-    Python, donc `int(True)` ou `float(False)` réussiraient silencieusement.
+    Python, donc `float(False)` réussirait silencieusement.
     """
     if isinstance(valeur, bool):
         raise ConfigError(f"{chemin} : {MESSAGE_BOOLEEN}")
     try:
-        return caster(valeur)
+        return float(valeur)
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"{chemin} : valeur numérique attendue, reçu {valeur!r}") from exc
 
@@ -132,7 +139,7 @@ def _curve(raw: Any, chemin: str) -> CurveSpec:
                 f"{chemin} : les clés de paramètres doivent être des chaînes, reçu {cle!r}"
             )
     params = {
-        cle: _nombre(valeur, f"{chemin}.{cle}", float)
+        cle: _nombre(valeur, f"{chemin}.{cle}")
         for cle, valeur in raw.items()
         if cle != "type"
     }
@@ -154,7 +161,15 @@ def load_config(path: Path | None = None) -> Config:
 
     chemin = Path(path) if path is not None else DEFAULT_CONFIG_PATH
     try:
-        raw = yaml.safe_load(chemin.read_text(encoding="utf-8")) or {}
+        # Lu puis normalisé, et non `... or {}` : un fichier ne contenant que
+        # `0` ou `false` est un mapping absent au sens YAML (`None`), pas une
+        # valeur fausse à confondre avec lui après coup. L'idiome `or {}`
+        # aurait laissé passer un tel fichier jusqu'au message de `moods`
+        # (« au moins un mood »), qui ne nomme pas la vraie clé fautive : la
+        # racine elle-même.
+        raw = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+        if raw is None:
+            raw = {}
     except FileNotFoundError as exc:
         raise ConfigError(f"configuration introuvable : {chemin}") from exc
     except (IsADirectoryError, NotADirectoryError, PermissionError) as exc:
@@ -174,10 +189,24 @@ def load_config(path: Path | None = None) -> Config:
             f"la racine de {chemin} doit être un mapping (clé: valeur), pas {type(raw).__name__}"
         )
 
+    # Liste blanche fermée : une clé mal orthographiée (`seconds_per_tracks`)
+    # doit être signalée, pas silencieusement ignorée. `cle` peut être de
+    # n'importe quel type YAML (un entier, par exemple) ; `_CHAMPS_RACINE` ne
+    # contenant que des chaînes, le test d'appartenance rejette aussi ce cas
+    # sans traitement particulier.
+    for cle in raw:
+        if cle not in _CHAMPS_RACINE:
+            raise ConfigError(f"clé de configuration inconnue à la racine : {cle!r}")
+
     # `.get(cle, defaut)` et non `.get(cle) or defaut` : `moods: 0` est une
     # valeur fausse au sens Python, et l'idiome `or` la ferait passer pour
     # une absence de clé au lieu d'être rejetée pour mauvais type juste après.
+    # `moods:` laissé nul (`None`) est en revanche traité comme absent, comme
+    # `poids:` : le message qui en résulterait sinon (« pas une valeur
+    # unique ») décrirait mal la situation d'une clé simplement vide.
     moods_raw = raw.get("moods", ())
+    if moods_raw is None:
+        moods_raw = ()
     if isinstance(moods_raw, str) or not isinstance(moods_raw, (list, tuple)):
         raise ConfigError("moods doit être une liste de chaînes, pas une valeur unique")
     for element in moods_raw:
@@ -188,9 +217,22 @@ def load_config(path: Path | None = None) -> Config:
         raise ConfigError("la configuration doit définir au moins un mood")
     if len(moods) > MOOD_MAX:
         raise ConfigError(f"l'échelle de mood est limitée à {MOOD_MAX} valeurs, {len(moods)} fournies")
+    # Un doublon rend un niveau de l'échelle ordinale inaccessible :
+    # `mood_value` rend toujours l'index du premier tag rencontré. Comparaison
+    # via `normalize_tag` pour que `Calme` et `calme` comptent comme un même
+    # doublon.
+    vus: set[str] = set()
+    for mood in moods:
+        normalise = normalize_tag(mood)
+        if normalise in vus:
+            raise ConfigError(f"moods : doublon détecté pour {mood!r}")
+        vus.add(normalise)
 
-    # Même remarque que pour `moods` : `.get(cle, defaut)`, pas `or defaut`.
+    # Même remarque que pour `moods` : `.get(cle, defaut)`, pas `or defaut`,
+    # et `None` traité comme absent pour la même raison.
     profils_raw = raw.get("profils", {})
+    if profils_raw is None:
+        profils_raw = {}
     if not isinstance(profils_raw, dict):
         raise ConfigError("profils doit être un mapping (clé: profil)")
     if not profils_raw:
@@ -201,6 +243,9 @@ def load_config(path: Path | None = None) -> Config:
             raise ConfigError(f"profils : les clés doivent être des chaînes, reçu {cle!r}")
         if not isinstance(corps, dict):
             raise ConfigError(f"profils.{cle} doit être un mapping avec 'label', 'bpm' et 'mood'")
+        for champ in corps:
+            if champ not in _CHAMPS_PROFIL:
+                raise ConfigError(f"profils.{cle} : clé inconnue {champ!r}")
         label_brut = corps.get("label", cle)
         if not isinstance(label_brut, str):
             raise ConfigError(f"profils.{cle}.label : chaîne attendue, reçu {label_brut!r}")
@@ -213,7 +258,12 @@ def load_config(path: Path | None = None) -> Config:
 
     # Même remarque que pour `moods`/`profils` : `.get(cle, defaut)`, pas
     # `or defaut` — `poids: 0` ne doit pas passer pour « aucune surcharge ».
+    # `poids:` laissé nul (`None`) reste en revanche « aucune surcharge » :
+    # commenter tous les poids sous `poids:` est une manipulation défendable
+    # sur un fichier édité à la main, et `Weights()` porte déjà des défauts.
     poids_raw = raw.get("poids", {})
+    if poids_raw is None:
+        poids_raw = {}
     if not isinstance(poids_raw, dict):
         raise ConfigError("poids doit être un mapping (clé: valeur)")
     poids = Weights()
@@ -223,9 +273,22 @@ def load_config(path: Path | None = None) -> Config:
         if champ not in _CHAMPS_POIDS:
             raise ConfigError(f"poids.{champ} : poids inconnu")
         if champ == "k":
-            poids = replace(poids, k=_entier(valeur, f"poids.{champ}"))
+            k = _entier(valeur, f"poids.{champ}")
+            if k < 1:
+                raise ConfigError(f"poids.{champ} : doit être au moins 1")
+            poids = replace(poids, k=k)
+        elif champ == "bpm_tolerance":
+            bpm_tolerance = _nombre(valeur, f"poids.{champ}")
+            if bpm_tolerance <= 0:
+                raise ConfigError(f"poids.{champ} : doit être strictement positif")
+            poids = replace(poids, bpm_tolerance=bpm_tolerance)
         else:
-            poids = replace(poids, **{champ: _nombre(valeur, f"poids.{champ}", float)})
+            # `bpm`, `mood`, `tonalite` : des poids négatifs inverseraient le
+            # sens du coût qu'ils pondèrent dans le moteur.
+            nombre = _nombre(valeur, f"poids.{champ}")
+            if nombre < 0:
+                raise ConfigError(f"poids.{champ} : doit être positif ou nul")
+            poids = replace(poids, **{champ: nombre})
 
     # Passe par `_entier`, comme `poids.k` : même comportement (refus des
     # booléens, acceptation d'un flottant exactement entier comme `120.0`)

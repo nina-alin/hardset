@@ -4,7 +4,14 @@ import os
 
 import pytest
 
-from hardset.config import ConfigError, load_config
+from hardset.config import ConfigError, Weights, load_config
+
+
+def _ecrit(tmp_path, nom, contenu):
+    """Écrit `contenu` dans `tmp_path / nom` (UTF-8) et rend le chemin obtenu."""
+    fichier = tmp_path / nom
+    fichier.write_text(contenu, encoding="utf-8")
+    return fichier
 
 
 # --- Configuration livrée ------------------------------------------------
@@ -48,8 +55,9 @@ def test_mood_value(tag, attendu):
 # --- Surcharge par fichier -----------------------------------------------
 
 def test_surcharge_partielle(tmp_path):
-    fichier = tmp_path / "custom.yaml"
-    fichier.write_text(
+    fichier = _ecrit(
+        tmp_path,
+        "custom.yaml",
         "moods: [doux, fort]\n"
         "poids:\n"
         "  mood: 3.0\n"
@@ -58,7 +66,6 @@ def test_surcharge_partielle(tmp_path):
         "    label: Test\n"
         "    bpm: {type: lineaire}\n"
         "    mood: {type: lineaire}\n",
-        encoding="utf-8",
     )
     config = load_config(fichier)
     assert config.moods == ("doux", "fort")
@@ -68,24 +75,24 @@ def test_surcharge_partielle(tmp_path):
 
 
 def test_trop_de_moods_refuse(tmp_path):
-    fichier = tmp_path / "trop.yaml"
-    fichier.write_text(
+    fichier = _ecrit(
+        tmp_path,
+        "trop.yaml",
         "moods: [a, b, c, d, e, f]\n"
         "profils:\n"
         "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
-        encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="5"):
         load_config(fichier)
 
 
 def test_type_de_courbe_inconnu_refuse(tmp_path):
-    fichier = tmp_path / "mauvais.yaml"
-    fichier.write_text(
+    fichier = _ecrit(
+        tmp_path,
+        "mauvais.yaml",
         "moods: [a, b]\n"
         "profils:\n"
         "  p: {label: P, bpm: {type: exponentiel}, mood: {type: lineaire}}\n",
-        encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="exponentiel"):
         load_config(fichier)
@@ -99,22 +106,16 @@ def test_seconds_per_track_charge_depuis_la_config_livree():
 
 
 def test_seconds_per_track_invalide_refuse(tmp_path):
-    fichier = tmp_path / "invalide.yaml"
-    fichier.write_text(
+    fichier = _ecrit(
+        tmp_path,
+        "invalide.yaml",
         "moods: [a, b]\n"
         "seconds_per_track: -10\n"
         "profils:\n"
         "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
-        encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="seconds_per_track"):
         load_config(fichier)
-
-
-def _ecrit(tmp_path, nom, contenu):
-    fichier = tmp_path / nom
-    fichier.write_text(contenu, encoding="utf-8")
-    return fichier
 
 
 def test_seconds_per_track_non_entier_refuse(tmp_path):
@@ -281,7 +282,7 @@ def test_poids_cle_non_chaine_refuse(tmp_path):
         "profils:\n"
         "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
     )
-    with pytest.raises(ConfigError, match="poids"):
+    with pytest.raises(ConfigError, match="poids : les clés doivent être des chaînes"):
         load_config(fichier)
 
 
@@ -294,7 +295,7 @@ def test_profils_cle_non_chaine_refuse(tmp_path):
         "profils:\n"
         "  5: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
     )
-    with pytest.raises(ConfigError, match="profils"):
+    with pytest.raises(ConfigError, match="profils : les clés doivent être des chaînes"):
         load_config(fichier)
 
 
@@ -527,7 +528,7 @@ def test_poids_falsy_refuse(tmp_path):
         "profils:\n"
         "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
     )
-    with pytest.raises(ConfigError, match="poids"):
+    with pytest.raises(ConfigError, match="poids doit être un mapping"):
         load_config(fichier)
 
 
@@ -583,5 +584,220 @@ def test_poids_champ_special_python_refuse(tmp_path, champ_special):
         "profils:\n"
         "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
     )
-    with pytest.raises(ConfigError, match="poids"):
+    with pytest.raises(ConfigError, match=f"poids.{champ_special} : poids inconnu"):
+        load_config(fichier)
+
+
+# --- Corrections de clôture : validation du nom des clés -------------------
+
+def test_racine_cle_inconnue_refuse(tmp_path):
+    """Une clé racine mal orthographiée (`seconds_per_tracks`, au pluriel) ne
+    doit pas se charger en silence : elle ferait sinon dériver la durée du
+    set sans qu'aucun message ne le signale."""
+    fichier = _ecrit(
+        tmp_path,
+        "racine_typo.yaml",
+        "moods: [a, b]\n"
+        "seconds_per_tracks: 90\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="seconds_per_tracks"):
+        load_config(fichier)
+
+
+def test_profil_cle_inconnue_refuse(tmp_path):
+    """Même défaut dans le corps d'un profil : `labell` (au lieu de `label`)
+    ferait prendre la clé du profil comme libellé sans le dire."""
+    fichier = _ecrit(
+        tmp_path,
+        "profil_typo.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p:\n"
+        "    labell: Montée\n"
+        "    bpm: {type: lineaire}\n"
+        "    mood: {type: lineaire}\n",
+    )
+    with pytest.raises(ConfigError, match="labell"):
+        load_config(fichier)
+
+
+# --- Corrections de clôture : gardes non couvertes par un test -------------
+
+def test_courbe_parametre_inconnu_nomme_refuse(tmp_path):
+    """Une vraie faute de frappe sur un paramètre de courbe (`amplitud` au
+    lieu d'`amplitude`) doit être nommée par le message, sans être masquée
+    par la garde de type de clé (qui ne se déclenche pas ici : `amplitud`
+    est bien une chaîne)."""
+    fichier = _ecrit(
+        tmp_path,
+        "courbe_typo.yaml",
+        "moods: [a, b]\n"
+        "profils:\n"
+        "  p:\n"
+        "    label: P\n"
+        "    bpm: {type: vagues, amplitud: 0.15}\n"
+        "    mood: {type: lineaire}\n",
+    )
+    with pytest.raises(ConfigError, match="amplitud"):
+        load_config(fichier)
+
+
+def test_moods_vide_refuse(tmp_path):
+    """`moods: []` : une liste vide reste une liste valide, mais ne définit
+    aucun mood."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_vide.yaml",
+        "moods: []\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="au moins un mood"):
+        load_config(fichier)
+
+
+def test_profils_vide_refuse(tmp_path):
+    """`profils: {}` : un mapping vide reste un mapping valide, mais ne
+    définit aucun profil."""
+    fichier = _ecrit(tmp_path, "profils_vide.yaml", "moods: [a, b]\nprofils: {}\n")
+    with pytest.raises(ConfigError, match="au moins un profil"):
+        load_config(fichier)
+
+
+def test_poids_champ_inconnu_plausible_refuse(tmp_path):
+    """Une faute de frappe plausible sous `poids:` (`moodd` au lieu de
+    `mood`), et non seulement les cas `__dunder__` déjà couverts."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_typo.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  moodd: 1.5\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.moodd"):
+        load_config(fichier)
+
+
+# --- Corrections de clôture : `poids:` vide et messages de clé nulle -------
+
+def test_poids_nul_reste_sans_surcharge(tmp_path):
+    """Commenter tous les poids sous `poids:` (donc `poids:` sans enfant,
+    lu `None` par YAML) doit rester équivalent à une clé absente : « aucune
+    surcharge », pas une `ConfigError`."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_nul.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    config = load_config(fichier)
+    assert config.poids == Weights()
+
+
+def test_moods_nul_message_adequat(tmp_path):
+    """`moods:` laissé nul doit être décrit comme l'absence d'au moins un
+    mood, pas comme « pas une valeur unique » (un message qui décrirait mal
+    la situation d'une clé simplement vide)."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_nul.yaml",
+        "moods:\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="au moins un mood"):
+        load_config(fichier)
+
+
+def test_profils_nul_message_adequat(tmp_path):
+    """Même raisonnement que pour `moods:` nul, côté `profils:`."""
+    fichier = _ecrit(tmp_path, "profils_nul.yaml", "moods: [a, b]\nprofils:\n")
+    with pytest.raises(ConfigError, match="au moins un profil"):
+        load_config(fichier)
+
+
+# --- Corrections de clôture : bornes sur les valeurs de `poids` ------------
+
+def test_poids_k_zero_refuse(tmp_path):
+    """`k` est une largeur de tirage : `0` (ou moins) partirait en
+    comportement absurde dans le moteur, loin de `load_config()`."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_k_zero.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  k: 0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.k"):
+        load_config(fichier)
+
+
+def test_poids_bpm_tolerance_zero_refuse(tmp_path):
+    """`bpm_tolerance` est un diviseur : `0` partirait en
+    `ZeroDivisionError` dans le moteur."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_bpm_tolerance_zero.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  bpm_tolerance: 0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.bpm_tolerance"):
+        load_config(fichier)
+
+
+def test_poids_bpm_negatif_refuse(tmp_path):
+    """Les poids (`bpm`, `mood`, `tonalite`) doivent rester positifs ou
+    nuls : un poids négatif inverserait le sens du coût qu'il pondère."""
+    fichier = _ecrit(
+        tmp_path,
+        "poids_bpm_negatif.yaml",
+        "moods: [a, b]\n"
+        "poids:\n"
+        "  bpm: -1.0\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="poids.bpm"):
+        load_config(fichier)
+
+
+# --- Corrections de clôture : doublons dans `moods` -------------------------
+
+def test_moods_doublon_refuse(tmp_path):
+    """Un doublon rend un niveau de l'échelle ordinale inatteignable :
+    `mood_value` rend toujours l'index du premier tag rencontré."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_doublon.yaml",
+        "moods: [calme, calme, vénère]\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="doublon"):
+        load_config(fichier)
+
+
+def test_moods_doublon_normalise_refuse(tmp_path):
+    """Le doublon se détecte aussi entre deux graphies du même tag
+    (`Calme` / `calme`), via `normalize_tag`, comme `mood_value` le fait
+    déjà."""
+    fichier = _ecrit(
+        tmp_path,
+        "moods_doublon_normalise.yaml",
+        "moods: [Calme, calme]\n"
+        "profils:\n"
+        "  p: {label: P, bpm: {type: lineaire}, mood: {type: lineaire}}\n",
+    )
+    with pytest.raises(ConfigError, match="doublon"):
         load_config(fichier)

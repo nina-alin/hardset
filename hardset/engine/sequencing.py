@@ -141,12 +141,14 @@ def _sans_avertissements_de_remplacement(warnings: list[SetWarning]) -> list[Set
     avertissement à jour est ajouté juste après pour celle en cours. Sans ce
     filtre, des tentatives infructueuses répétées s'accumuleraient à l'identique,
     et un remplacement réussi recopierait des avertissements déjà périmés.
+
+    La distinction avec une pénurie de `generate` (qui doit, elle, survivre à
+    tout remplacement) repose sur `WarningCode.REPLACEMENT_SHORTAGE`, un code
+    dédié — et non sur le texte du message. Les deux codes partageaient
+    auparavant `WarningCode.SHORTAGE`, et seule la non-collision, non garantie,
+    des deux formats de message rendait le filtrage fiable.
     """
-    return [
-        w
-        for w in warnings
-        if not (w.code == WarningCode.SHORTAGE and w.message.startswith(_PREFIXE_AVERTISSEMENT_REMPLACEMENT))
-    ]
+    return [w for w in warnings if w.code != WarningCode.REPLACEMENT_SHORTAGE]
 
 
 def replace_at(
@@ -185,7 +187,7 @@ def replace_at(
             warnings=[
                 *base_warnings,
                 SetWarning(
-                    code=WarningCode.SHORTAGE,
+                    code=WarningCode.REPLACEMENT_SHORTAGE,
                     message=f"{_PREFIXE_AVERTISSEMENT_REMPLACEMENT} {position + 1}",
                 ),
             ],

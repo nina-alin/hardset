@@ -66,6 +66,7 @@ class WarningCode(str, Enum):
     MULTIPLE_MOODS = "multiple_moods"    # morceau portant plusieurs tags de mood
     NO_KEY = "no_key"                    # tonalité absente ou illisible
     NO_TRACK_ID = "no_track_id"          # morceau sans TrackID, absent de la collection
+    REPLACEMENT_SHORTAGE = "replacement_shortage"  # aucun remplaçant dispo pour `replace_at`
 
 
 @dataclass(frozen=True)

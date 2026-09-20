@@ -4,12 +4,13 @@ Le moteur étant pur, tous les cas se jouent sur des collections fabriquées en 
 """
 
 import random
+from dataclasses import replace
 
 import pytest
 
 from hardset.config import Weights, load_config
 from hardset.engine.sequencing import SequencingError, cost, generate, replace_at
-from hardset.model import GeneratedSet, SetRequest, Target, Track, WarningCode
+from hardset.model import GeneratedSet, SetRequest, SetWarning, Target, Track, WarningCode
 
 # Chargé une seule fois pour les profils de courbe (`generate`) : les tests de
 # coût, eux, construisent leur propre `Weights()` pour ne pas dépendre de
@@ -267,7 +268,7 @@ def test_remplacement_sans_candidat_laisse_le_set_intact():
     remplace = replace_at(resultat, 2, pool, requete(duration_min=10), CONFIG)
 
     assert [t.id for t in remplace.tracks] == avant
-    assert any(w.code == WarningCode.SHORTAGE for w in remplace.warnings)
+    assert any(w.code == WarningCode.REPLACEMENT_SHORTAGE for w in remplace.warnings)
 
 
 def test_remplacements_infructueux_repetes_ne_dupliquent_pas_lavertissement():
@@ -277,7 +278,7 @@ def test_remplacements_infructueux_repetes_ne_dupliquent_pas_lavertissement():
     premier = replace_at(resultat, 2, pool, requete(duration_min=10), CONFIG)
     second = replace_at(premier, 2, pool, requete(duration_min=10), CONFIG)
 
-    penuries = [w for w in second.warnings if w.code == WarningCode.SHORTAGE]
+    penuries = [w for w in second.warnings if w.code == WarningCode.REPLACEMENT_SHORTAGE]
     assert len(penuries) == 1
 
 
@@ -287,12 +288,12 @@ def test_remplacement_reussi_nefface_pas_lavertissement_dun_remplacement_precede
 
     # Une première tentative échoue faute de tout candidat (pool vide fourni).
     echoue = replace_at(resultat, 0, [], requete(), CONFIG)
-    assert any(w.code == WarningCode.SHORTAGE for w in echoue.warnings)
+    assert any(w.code == WarningCode.REPLACEMENT_SHORTAGE for w in echoue.warnings)
 
     # Une seconde tentative, ailleurs, réussit : l'avertissement de la
     # première ne doit pas être reporté, il est désormais périmé.
     reussi = replace_at(echoue, 1, pool, requete(seed=7), CONFIG)
-    assert not any(w.code == WarningCode.SHORTAGE for w in reussi.warnings)
+    assert not any(w.code == WarningCode.REPLACEMENT_SHORTAGE for w in reussi.warnings)
 
 
 def test_position_hors_set_refusee():
@@ -300,6 +301,87 @@ def test_position_hors_set_refusee():
     resultat = generate(pool, requete(), CONFIG)
     with pytest.raises(SequencingError, match="position"):
         replace_at(resultat, 99, pool, requete(), CONFIG)
+
+
+# --- Distinction par code entre pénurie de generate et de remplacement ----
+
+def test_avertissement_de_generate_non_filtre_meme_si_son_message_ressemble_a_celui_dun_remplacement():
+    """La distinction entre la pénurie de `generate` et celle de `replace_at`
+    doit reposer sur `WarningCode`, pas sur le texte du message.
+
+    Ce test fabrique un avertissement de code `SHORTAGE` (celui de `generate`)
+    dont le message se trouve, par coïncidence, commencer comme le format
+    qu'utilise `replace_at` pour ses propres pénuries. Un filtrage fondé sur
+    le préfixe du message le ferait disparaître à tort après un remplacement
+    réussi ailleurs ; un filtrage fondé sur le code doit le conserver.
+    """
+    pool = collection_dense()
+    resultat = generate(pool, requete(), CONFIG)
+
+    avertissement_de_generate = SetWarning(
+        code=WarningCode.SHORTAGE,
+        message="aucun remplaçant disponible à la position 9 (coïncidence de formulation)",
+    )
+    avec_avertissement = GeneratedSet(
+        tracks=resultat.tracks,
+        targets=resultat.targets,
+        warnings=[avertissement_de_generate],
+    )
+
+    reussi = replace_at(avec_avertissement, 0, pool, requete(seed=7), CONFIG)
+
+    assert avertissement_de_generate in reussi.warnings
+
+
+def test_avertissement_de_penurie_de_generate_survit_a_des_remplacements_reussis():
+    """Un avertissement de pénurie émis par `generate` (morceaux éligibles
+    insuffisants pour la durée demandée) porte sur le déficit global de la
+    collection, pas sur une position précise : il doit survivre à des
+    `replace_at` réussis sur les positions effectivement générées.
+    """
+    pool_initial = [piste(str(i), 150.0 + i, (i % 5) + 1) for i in range(10)]
+    resultat = generate(pool_initial, requete(duration_min=90), CONFIG)   # 45 demandés, 10 dispo
+    assert len(resultat.tracks) == 10
+    avertissement_initial = next(w for w in resultat.warnings if w.code == WarningCode.SHORTAGE)
+
+    # Un pool plus large pour permettre un remplacement réussi (les morceaux
+    # déjà placés sont exclus par `replace_at`).
+    pool_large = pool_initial + [piste(f"x{i}", 150.0 + i, (i % 5) + 1) for i in range(20)]
+
+    premier = replace_at(resultat, 0, pool_large, requete(duration_min=90), CONFIG)
+    assert avertissement_initial in premier.warnings
+
+    second = replace_at(premier, 1, pool_large, requete(duration_min=90, seed=2), CONFIG)
+    assert avertissement_initial in second.warnings
+
+
+# --- Déduplication par id, côté replace_at --------------------------------
+
+def test_replace_at_deduplique_les_doublons_dans_son_pool():
+    """`replace_at` applique `_dedoublonne_par_id` sur son argument `tracks`,
+    tout comme `generate` le fait sur le sien (cf.
+    `test_id_duplique_en_entree_nest_place_quune_fois`), mais ce n'était
+    jusqu'ici testé que côté `generate`.
+
+    Ici, "6" a le coût le plus bas et apparaît 5 fois, "7" a un coût
+    strictement plus élevé et apparaît une seule fois. Avec `k=2` : si le
+    pool est dédoublonné, les deux id sont dans la fenêtre des `k` meilleurs
+    candidats et "7" reste tirable ; sans dédoublonnage, les 5 doublons de
+    "6" occupent à eux seuls toute la fenêtre et "7" n'est plus jamais
+    tirable, quelle que soit la graine.
+    """
+    pool_place = [piste(str(i), 180.0, 3) for i in range(1, 6)]   # ids "1" à "5", déjà placés
+    targets = [Target(position=i, bpm=180.0, mood=3.0) for i in range(5)]
+    generated = GeneratedSet(tracks=list(pool_place), targets=targets, warnings=[])
+
+    candidats = [piste("6", 180.0, 3)] * 5 + [piste("7", 181.0, 3)]
+    config_k2 = replace(CONFIG, poids=replace(CONFIG.poids, k=2))
+
+    # Graine choisie pour que le tirage, une fois le pool dédoublonné à
+    # {"6", "7"}, retienne "7" (le second des deux candidats).
+    remplace = replace_at(generated, 2, pool_place + candidats, requete(seed=0), config_k2)
+
+    assert remplace.tracks[2].id == "7"
 
 
 # --- Profil ---------------------------------------------------------------

@@ -17,6 +17,15 @@ function el(tag, props = {}, enfants = []) {
   return noeud;
 }
 
+// Met en forme le "detail" d'une réponse d'erreur de l'API. Les erreurs métier
+// renvoient une chaîne française directement affichable ; les erreurs de
+// validation de FastAPI renvoient une liste d'objets, qu'il ne faut jamais
+// afficher telle quelle (sans quoi on obtient "[object Object]").
+function messageErreur(detail) {
+  if (typeof detail === 'string' && detail) return detail;
+  return 'requête invalide : vérifiez les valeurs saisies';
+}
+
 async function api(route, corps) {
   const reponse = await fetch(route, {
     method: 'POST',
@@ -25,9 +34,24 @@ async function api(route, corps) {
   });
   if (!reponse.ok) {
     const donnees = await reponse.json().catch(() => ({ detail: reponse.statusText }));
-    throw new Error(donnees.detail || 'erreur inattendue');
+    throw new Error(messageErreur(donnees.detail));
   }
   return reponse;
+}
+
+// Désactive le ou les boutons donnés le temps de l'action asynchrone, pour
+// empêcher qu'un double-clic ne déclenche deux appels réseau concurrents sur
+// le même état. Les erreurs sont affichées comme avertissement.
+async function proteger(boutons, action) {
+  const liste = Array.isArray(boutons) ? boutons : [boutons];
+  for (const bouton of liste) bouton.disabled = true;
+  try {
+    await action();
+  } catch (erreur) {
+    renderAvertissements([{ message: erreur.message }]);
+  } finally {
+    for (const bouton of liste) bouton.disabled = false;
+  }
 }
 
 // --- Lecture du formulaire ------------------------------------------------
@@ -70,11 +94,18 @@ function render() {
   const jeu = state.set;
   $('resultat').hidden = !jeu;
   $('regenerer').hidden = !jeu;
-  if (!jeu) return;
+  // Le bouton d'export reste inactif tant qu'il n'y a pas de set, ou que le
+  // set affiché ne contient plus aucun morceau (toutes les lignes supprimées).
+  $('exporter').disabled = !jeu || jeu.tracks.length === 0;
+  const corps = $('tracklist').querySelector('tbody');
+  if (!jeu) {
+    // Pas de set (au démarrage, ou après le chargement d'une nouvelle
+    // collection) : la tracklist ne doit garder aucune ligne périmée.
+    corps.replaceChildren();
+    return;
+  }
 
   $('compteur').textContent = `${jeu.tracks.length} morceaux`;
-
-  const corps = $('tracklist').querySelector('tbody');
   corps.replaceChildren();
 
   jeu.tracks.forEach((track, index) => {
@@ -91,7 +122,7 @@ function render() {
       }),
       el('button', {
         type: 'button', textContent: '⟳', title: 'remplacer',
-        onclick: () => remplacer(index),
+        onclick: (evenement) => remplacer(index, evenement.currentTarget),
       }),
       el('button', {
         type: 'button', textContent: '✕', title: 'supprimer',
@@ -120,6 +151,11 @@ async function chargerCollection() {
   const bouton = $('charger');
   bouton.disabled = true;
   $('etat-collection').textContent = 'lecture…';
+  // Un set affiché ne survit pas au chargement d'une autre collection : il ne
+  // lui appartient plus, et le laisser à l'écran mènerait à des actions qui
+  // échouent avec un message serveur correct mais déroutant.
+  state.set = null;
+  render();
   try {
     const reponse = await api('/api/collection', { path: $('path').value });
     const donnees = await reponse.json();
@@ -154,29 +190,24 @@ async function chargerCollection() {
 }
 
 async function generer() {
-  const bouton = $('generer');
-  bouton.disabled = true;
-  try {
+  // « Générer » et « Régénérer » déclenchent tous les deux cette fonction : on
+  // désactive les deux boutons ensemble, pour ne pas dépendre de savoir lequel
+  // des deux a réellement reçu le clic.
+  await proteger([$('generer'), $('regenerer')], async () => {
     const reponse = await api('/api/generate', requete());
     state.set = await reponse.json();
     $('nom-playlist').value = state.set.playlist_name;
     render();
-  } catch (erreur) {
-    renderAvertissements([{ message: erreur.message }]);
-  } finally {
-    bouton.disabled = false;
-  }
+  });
 }
 
-async function remplacer(index) {
-  const ids = state.set.tracks.map((t) => t.id);
-  try {
+async function remplacer(index, bouton) {
+  await proteger(bouton, async () => {
+    const ids = state.set.tracks.map((t) => t.id);
     const reponse = await api('/api/replace', requete({ track_ids: ids, position: index }));
     state.set = await reponse.json();
     render();
-  } catch (erreur) {
-    renderAvertissements([{ message: erreur.message }]);
-  }
+  });
 }
 
 function supprimer(index) {
@@ -193,7 +224,7 @@ function deplacer(index, delta) {
 }
 
 async function exporter() {
-  try {
+  await proteger($('exporter'), async () => {
     const reponse = await api('/api/export', {
       path: state.path,
       track_ids: state.set.tracks.map((t) => t.id),
@@ -208,9 +239,7 @@ async function exporter() {
     lien.click();
     lien.remove();
     URL.revokeObjectURL(lien.href);
-  } catch (erreur) {
-    renderAvertissements([{ message: erreur.message }]);
-  }
+  });
 }
 
 // --- Démarrage ------------------------------------------------------------

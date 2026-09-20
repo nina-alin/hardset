@@ -27,17 +27,42 @@ class SequencingError(Exception):
 def cost(candidate: Track, target: Target, previous: Track | None, weights: Weights) -> float:
     """Coût d'un candidat à une position donnée. Plus bas, mieux c'est.
 
+    Précondition : `candidate.mood` n'est pas `None`. C'est `eligible` qui
+    l'assure, en écartant en amont les morceaux sans mood. Un appelant qui
+    violerait cette précondition échoue immédiatement (`TypeError` sur la
+    soustraction) plutôt que d'obtenir silencieusement le meilleur score
+    possible : un repli sur `target.mood` annulerait ce terme, ce qui ferait
+    d'un morceau sans mood un candidat imbattable — l'inverse de l'intention.
+
     La première position n'a pas de prédécesseur : la pénalité harmonique y vaut 0,
     et non 0,5 — l'absence de voisin n'est pas une tonalité inconnue.
     """
     tolerance = weights.bpm_tolerance if weights.bpm_tolerance > 0 else 1.0
     penalite = 0.0 if previous is None else key_penalty(previous.camelot, candidate.camelot)
-    mood = candidate.mood if candidate.mood is not None else target.mood
     return (
         weights.bpm * abs(candidate.bpm - target.bpm) / tolerance
-        + weights.mood * abs(mood - target.mood)
+        + weights.mood * abs(candidate.mood - target.mood)
         + weights.tonalite * penalite
     )
+
+
+def _dedoublonne_par_id(tracks: list[Track]) -> list[Track]:
+    """Ne garde que la première occurrence de chaque `id`, en préservant l'ordre.
+
+    `Track` est une dataclass figée, comparée par valeur : deux occurrences du
+    même morceau (même `id`, un doublon d'entrée non filtré par `eligible`)
+    sont égales, et `list.remove` retirerait la première occurrence égale
+    plutôt que l'objet effectivement tiré. Sans cette étape, le second
+    exemplaire resterait disponible et pourrait être placé une seconde fois.
+    """
+    vus: set[str] = set()
+    retenus: list[Track] = []
+    for track in tracks:
+        if track.id in vus:
+            continue
+        vus.add(track.id)
+        retenus.append(track)
+    return retenus
 
 
 def _pick(
@@ -50,14 +75,19 @@ def _pick(
     """Tire un morceau parmi les `k` moins coûteux et le retire du pool.
 
     Le tri secondaire par `id` rend le résultat reproductible à graine fixée, sans
-    dépendre de l'ordre d'itération du pool.
+    dépendre de l'ordre d'itération du pool. Le retrait se fait par `id`, et non
+    par égalité de valeur : `pool` est déjà dédoublonné par `id` à l'entrée de
+    `generate`/`replace_at`, donc au plus un morceau correspond.
     """
     notes = sorted(
         pool,
         key=lambda track: (cost(track, target, previous, weights), track.id),
     )
     choisi = rng.choice(notes[: max(1, weights.k)])
-    pool.remove(choisi)
+    for index, track in enumerate(pool):
+        if track.id == choisi.id:
+            del pool[index]
+            break
     return choisi
 
 
@@ -74,7 +104,7 @@ def _profile(request: SetRequest, config: Config):
 def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> GeneratedSet:
     """Construit le set demandé, ou le plus long possible si les morceaux manquent."""
     profile = _profile(request, config)
-    pool = eligible(tracks, request)
+    pool = _dedoublonne_par_id(eligible(tracks, request))
 
     vise = request.track_count
     count = min(vise, len(pool))
@@ -100,6 +130,25 @@ def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> Ge
     return GeneratedSet(tracks=retenus, targets=targets, warnings=avertissements)
 
 
+_PREFIXE_AVERTISSEMENT_REMPLACEMENT = "aucun remplaçant disponible à la position"
+
+
+def _sans_avertissements_de_remplacement(warnings: list[SetWarning]) -> list[SetWarning]:
+    """Écarte les avertissements de pénurie produits par un `replace_at` antérieur.
+
+    Ils sont propres à cette tentative-là : soit elle vient d'être remplacée par
+    un remplacement réussi (le manque n'existe plus), soit un nouvel
+    avertissement à jour est ajouté juste après pour celle en cours. Sans ce
+    filtre, des tentatives infructueuses répétées s'accumuleraient à l'identique,
+    et un remplacement réussi recopierait des avertissements déjà périmés.
+    """
+    return [
+        w
+        for w in warnings
+        if not (w.code == WarningCode.SHORTAGE and w.message.startswith(_PREFIXE_AVERTISSEMENT_REMPLACEMENT))
+    ]
+
+
 def replace_at(
     generated: GeneratedSet,
     position: int,
@@ -119,20 +168,25 @@ def replace_at(
         )
 
     deja_places = {track.id for track in generated.tracks}
-    pool = [track for track in eligible(tracks, request) if track.id not in deja_places]
+    pool = [
+        track
+        for track in _dedoublonne_par_id(eligible(tracks, request))
+        if track.id not in deja_places
+    ]
 
     target = generated.targets[position]
     precedent = generated.tracks[position - 1] if position > 0 else None
+    base_warnings = _sans_avertissements_de_remplacement(generated.warnings)
 
     if not pool:
         return GeneratedSet(
             tracks=list(generated.tracks),
             targets=list(generated.targets),
             warnings=[
-                *generated.warnings,
+                *base_warnings,
                 SetWarning(
                     code=WarningCode.SHORTAGE,
-                    message=f"aucun remplaçant disponible à la position {position + 1}",
+                    message=f"{_PREFIXE_AVERTISSEMENT_REMPLACEMENT} {position + 1}",
                 ),
             ],
         )
@@ -145,5 +199,5 @@ def replace_at(
     return GeneratedSet(
         tracks=nouveaux,
         targets=list(generated.targets),
-        warnings=list(generated.warnings),
+        warnings=base_warnings,
     )

@@ -1,5 +1,89 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="utf-8"><title>hardset</title></head>
-<body><h1>hardset</h1></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hardset — générateur de sets</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <h1>hardset</h1>
+
+  <section id="form" class="carte">
+    <div class="ligne">
+      <label for="path">Export XML de la collection</label>
+      <input type="text" id="path" placeholder="~/rekordbox.xml">
+      <button id="charger" type="button">Charger</button>
+      <span id="etat-collection" class="discret"></span>
+    </div>
+
+    <div class="colonnes">
+      <fieldset>
+        <legend>Genres</legend>
+        <div id="genres" class="cases discret">Charger une collection pour voir les genres.</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Moods</legend>
+        <div id="moods" class="cases"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Set</legend>
+        <label for="profile">Profil d'évolution</label>
+        <select id="profile"></select>
+
+        <label for="duration">Durée (minutes)</label>
+        <input type="number" id="duration" value="90" min="1" step="5">
+
+        <label for="seconds">Temps de jeu par morceau (s)</label>
+        <input type="number" id="seconds" value="120" min="10" step="10">
+
+        <div class="ligne">
+          <span>
+            <label for="bpm-min">BPM min</label>
+            <input type="number" id="bpm-min" value="150" step="1">
+          </span>
+          <span>
+            <label for="bpm-max">BPM max</label>
+            <input type="number" id="bpm-max" value="200" step="1">
+          </span>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="ligne">
+      <button id="generer" type="button" class="primaire" disabled>Générer le set</button>
+      <button id="regenerer" type="button" hidden>Régénérer</button>
+    </div>
+  </section>
+
+  <section id="avertissements" hidden></section>
+
+  <section id="courbe" class="carte" hidden>
+    <h2>Courbe BPM</h2>
+    <div id="courbe-svg"></div>
+  </section>
+
+  <section id="resultat" class="carte" hidden>
+    <h2>Tracklist <span id="compteur" class="discret"></span></h2>
+    <table id="tracklist">
+      <thead>
+        <tr>
+          <th>#</th><th>Artiste</th><th>Titre</th><th>BPM</th>
+          <th>Clé</th><th>Mood</th><th>Genres</th><th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="ligne export">
+      <label for="nom-playlist">Nom de la playlist</label>
+      <input type="text" id="nom-playlist">
+      <button id="exporter" type="button" class="primaire">Exporter en XML</button>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
 </html>

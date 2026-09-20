@@ -1,0 +1,78 @@
+:root {
+  --fond: #14161a;
+  --carte: #1d2026;
+  --trait: #2c313a;
+  --texte: #e8eaed;
+  --discret: #9aa1ab;
+  --accent: #ff5c35;
+  --alerte: #3a2a14;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 1.5rem;
+  max-width: 1100px;
+  background: var(--fond);
+  color: var(--texte);
+  font: 15px/1.5 system-ui, sans-serif;
+}
+
+h1 { font-size: 1.4rem; letter-spacing: 0.02em; }
+h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+
+.carte {
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ligne { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
+.ligne > label { align-self: center; }
+.colonnes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+
+fieldset { border: 1px solid var(--trait); border-radius: 6px; }
+legend { color: var(--discret); padding: 0 0.4rem; }
+
+label { display: block; color: var(--discret); font-size: 0.85rem; margin-top: 0.5rem; }
+
+input, select, button {
+  font: inherit;
+  color: var(--texte);
+  background: #24282f;
+  border: 1px solid var(--trait);
+  border-radius: 5px;
+  padding: 0.4rem 0.6rem;
+}
+
+input[type="text"] { flex: 1; min-width: 14rem; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primaire { background: var(--accent); border-color: var(--accent); color: #14161a; font-weight: 600; }
+
+.cases { display: flex; flex-direction: column; gap: 0.25rem; max-height: 14rem; overflow-y: auto; }
+.cases label { display: flex; gap: 0.4rem; align-items: center; color: var(--texte); margin: 0; }
+
+.discret { color: var(--discret); font-size: 0.85rem; }
+
+#avertissements { padding: 0; }
+.avertissement {
+  background: var(--alerte);
+  border: 1px solid #5a4420;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--trait); }
+th { color: var(--discret); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; }
+td.actions { text-align: right; white-space: nowrap; }
+td.actions button { padding: 0.15rem 0.45rem; margin-left: 0.2rem; }
+tr.occupe { opacity: 0.4; }
+
+.export { margin-top: 1rem; }

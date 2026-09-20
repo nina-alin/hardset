@@ -3,8 +3,8 @@
 import pytest
 
 from hardset.config import CurveSpec, Profile
-from hardset.engine.curves import build_targets, curve_fn
-from hardset.model import SetRequest
+from hardset.engine.curves import CurveError, build_targets, curve_fn
+from hardset.model import MOOD_MAX, MOOD_MIN, SetRequest
 
 
 def profil(bpm: CurveSpec, mood: CurveSpec | None = None) -> Profile:
@@ -57,7 +57,7 @@ def test_vagues_oscille_et_reste_borne():
 
 
 def test_type_inconnu_refuse():
-    with pytest.raises(Exception):
+    with pytest.raises(CurveError):
         curve_fn(CurveSpec("exponentiel", {}))
 
 
@@ -102,3 +102,22 @@ def test_profil_vagues_redescend():
     )
     bpms = [c.bpm for c in cibles]
     assert any(b < a for a, b in zip(bpms, bpms[1:]))
+
+
+def test_mood_vagues_reste_dans_les_bornes():
+    """Vérifier le bornage de mood à travers build_targets avec une courbe vagues.
+
+    Avec une forte amplitude, la courbe vagues sortirait des bornes [0,1]
+    sans le clamp. Vérifie que les cibles restent dans [mood_min, mood_max].
+    """
+    cibles = build_targets(
+        requete(moods=frozenset({1, 5})),
+        profil(
+            CurveSpec("lineaire", {}),
+            CurveSpec("vagues", {"amplitude": 0.6, "oscillations": 2})
+        ),
+        50,
+    )
+    moods = [c.mood for c in cibles]
+    # Toutes les moods doivent rester dans les bornes demandées
+    assert all(1.0 <= m <= 5.0 for m in moods), f"Mood hors bornes : min={min(moods)}, max={max(moods)}"

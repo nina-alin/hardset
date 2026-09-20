@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 
 from hardset.config import Config
 from hardset.engine.curves import build_targets
+from hardset.engine.pinning import PinningError, resolve
+from hardset.engine.search import search
 from hardset.engine.sequencing import (
     SequencingError,
     generate,
@@ -41,9 +43,22 @@ STATIC = Path(__file__).parent / "static"
 # de plusieurs secondes.
 TARGETS_COUNT_MAX = 100_000
 
+# Plafond de `limit` sur `/api/tracks`. La page en demande 20 : une liste de
+# choix plus longue ne se lit pas. Le plafond protège d'une réponse énorme sur
+# une requête d'un seul caractère, sans interdire à une autre cliente d'en
+# demander davantage.
+TRACKS_LIMIT_MAX = 100
+
 
 class CollectionPayload(BaseModel):
     path: str
+
+
+class SearchPayload(CollectionPayload):
+    """Recherche d'un morceau à épingler, par artiste ou par titre."""
+
+    q: str = ""
+    limit: int = 20
 
 
 class SetRequestPayload(CollectionPayload):
@@ -57,6 +72,10 @@ class SetRequestPayload(CollectionPayload):
     # utilisée par le formulaire vient de `/api/config`, elle-même lue dans
     # `config.seconds_per_track` (point tranché de la tâche 10).
     seconds_per_track: int = 120
+    # Morceaux imposés aux extrémités. Non validés ici : c'est `resolve` qui le
+    # fait, contre la collection, et lui seul sait ce qu'ils impliquent.
+    start_track_id: str | None = None
+    end_track_id: str | None = None
 
     def to_request(self, config: Config) -> SetRequest:
         """Traduit le payload en `SetRequest`, après validation.
@@ -100,6 +119,8 @@ class SetRequestPayload(CollectionPayload):
             profile=self.profile,
             duration_min=self.duration_min,
             seconds_per_track=self.seconds_per_track,
+            start_track_id=self.start_track_id,
+            end_track_id=self.end_track_id,
         )
 
 
@@ -273,13 +294,28 @@ def create_app(config: Config) -> FastAPI:
             ],
         }
 
+    @app.post("/api/tracks")
+    def chercher(payload: SearchPayload) -> dict:
+        """Morceaux de la collection correspondant à la recherche.
+
+        Aucun critère du set n'est appliqué : c'est ce qui permet d'épingler un
+        morceau que la génération écarterait (`engine/search.py`).
+        """
+        lue = charger(payload.path)
+        limite = max(1, min(payload.limit, TRACKS_LIMIT_MAX))
+        trouves, tronque = search(lue.tracks, payload.q, limite)
+        return {
+            "tracks": [_track_payload(track) for track in trouves],
+            "truncated": tronque,
+        }
+
     @app.post("/api/generate")
     def generer(payload: SetRequestPayload) -> dict:
         lue = charger(payload.path)
         requete = payload.to_request(config)
         try:
             resultat = generate(lue.tracks, requete, config)
-        except SequencingError as exc:
+        except (SequencingError, PinningError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _set_payload(resultat, lue, requete)
 
@@ -298,14 +334,18 @@ def create_app(config: Config) -> FastAPI:
         # et le set courant reconstruit ici doit la porter comme celui que
         # `generate` avait rendu. Elle ne dépend que de la demande et de la
         # collection, donc `shortage_warnings` la redonne à l'identique.
-        courant = GeneratedSet(
-            tracks=tracks,
-            targets=build_targets(requete, profil, len(tracks), config.mood_max),
-            warnings=shortage_warnings(lue.tracks, requete),
-        )
         try:
+            # Les cibles du set courant doivent être celles de la demande
+            # accordée aux sons épinglés, sinon la courbe affichée cesse de
+            # correspondre à celle que le remplacement vise.
+            accordee, _ = resolve(lue.tracks, requete)
+            courant = GeneratedSet(
+                tracks=tracks,
+                targets=build_targets(accordee, profil, len(tracks), config.mood_max),
+                warnings=shortage_warnings(lue.tracks, requete),
+            )
             resultat = replace_at(courant, payload.position, lue.tracks, requete, config)
-        except SequencingError as exc:
+        except (SequencingError, PinningError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _set_payload(resultat, lue, requete)
 
@@ -317,6 +357,9 @@ def create_app(config: Config) -> FastAPI:
         redistribue sur les positions restantes, et cette redistribution est de
         la logique musicale — elle n'a donc qu'un propriétaire, le serveur, et
         c'est la même que celle qu'imposera le prochain remplacement.
+
+        Elle n'ouvre la collection que pour résoudre un son épinglé, dont elle a
+        besoin de connaître le tempo.
         """
         requete = payload.to_request(config)
         profil = profil_demande(requete)
@@ -329,6 +372,15 @@ def create_app(config: Config) -> FastAPI:
                 status_code=400,
                 detail=f"count ne peut pas dépasser {TARGETS_COUNT_MAX}",
             )
+        # La collection n'est ouverte que s'il y a un son épinglé : sans
+        # épinglage les cibles n'en dépendent pas, et la route garde la
+        # propriété que défend sa docstring. Le cache rend ce chargement
+        # gratuit en pratique — la page vient de lire la collection.
+        if requete.start_track_id is not None or requete.end_track_id is not None:
+            try:
+                requete, _ = resolve(charger(payload.path).tracks, requete)
+            except PinningError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "targets": [
                 {"position": c.position, "bpm": c.bpm, "mood": c.mood}

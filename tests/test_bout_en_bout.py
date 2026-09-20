@@ -142,3 +142,15 @@ def test_beatgrid_et_points_de_repere_traversent_toute_la_chaine(client):
     )
     assert [e.tag for e in noeud] == [e.tag for e in attendu]
     assert [e.attrib for e in noeud] == [e.attrib for e in attendu]
+
+
+def test_un_morceau_sans_mood_est_trouvable_donc_epinglable(client):
+    # « Industrial Corridor » (Mira Cast) est le morceau sans mood de la
+    # fixture, celui que `eligible` écarte toujours. La recherche, elle, doit
+    # le rendre — sans quoi il serait impossible de l'épingler, alors que c'est
+    # justement l'intérêt d'un choix explicite.
+    donnees = client.post(
+        "/api/tracks", json={"path": str(FIXTURE), "q": "industrial corridor"}
+    ).json()
+    assert [t["title"] for t in donnees["tracks"]] == ["Industrial Corridor"]
+    assert donnees["tracks"][0]["moods"] == []

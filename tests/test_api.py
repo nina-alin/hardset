@@ -533,3 +533,153 @@ def test_cibles_de_mood_bornees_aussi_sur_la_route_des_cibles(
         "/api/targets", json=corps(collection_xml, count=6)
     ).json()
     assert max(c["mood"] for c in donnees["targets"]) <= 3.0
+
+
+# --- Recherche de morceaux ------------------------------------------------
+
+def test_recherche_par_titre(client, collection_xml):
+    # « 7 » est cherché comme un fragment, pas comme un mot entier : 17, 27 et
+    # 37 en contiennent un aussi, et l'ordre est celui de la collection.
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre 7"}
+    ).json()
+    assert [t["id"] for t in donnees["tracks"]] == ["7", "17", "27", "37"]
+    assert donnees["truncated"] is False
+
+
+def test_recherche_sur_plusieurs_mots(client, collection_xml):
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "artiste 12"}
+    ).json()
+    assert [t["id"] for t in donnees["tracks"]] == ["12"]
+
+
+def test_recherche_vide_ne_rend_rien(client, collection_xml):
+    donnees = client.post("/api/tracks", json={"path": str(collection_xml), "q": ""}).json()
+    assert donnees == {"tracks": [], "truncated": False}
+
+
+def test_recherche_plafonnee_et_signalee(client, collection_xml):
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre", "limit": 5}
+    ).json()
+    assert len(donnees["tracks"]) == 5
+    assert donnees["truncated"] is True
+
+
+def test_le_plafond_de_recherche_est_borne(client, collection_xml):
+    # 1000 demandés, 100 au maximum servis — et la fixture n'en a que 40.
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre", "limit": 1000}
+    ).json()
+    assert len(donnees["tracks"]) == 40
+
+
+def test_la_recherche_rend_de_quoi_afficher_le_morceau(client, collection_xml):
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre 10"}
+    ).json()
+    assert donnees["tracks"][0]["bpm"] == 160.0
+    assert donnees["tracks"][0]["camelot"] == "8A"
+
+
+def test_la_recherche_signale_une_collection_illisible(client, tmp_path):
+    reponse = client.post(
+        "/api/tracks", json={"path": str(tmp_path / "absent.xml"), "q": "titre"}
+    )
+    assert reponse.status_code == 400
+
+
+# --- Sons épinglés --------------------------------------------------------
+
+def test_le_son_de_depart_ouvre_le_set_et_impose_la_borne(client, collection_xml):
+    donnees = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10")
+    ).json()
+    assert donnees["tracks"][0]["id"] == "10"
+    assert min(t["bpm"] for t in donnees["tracks"]) == 160.0
+
+
+def test_le_son_de_fin_ferme_le_set_et_impose_la_borne(client, collection_xml):
+    donnees = client.post(
+        "/api/generate", json=corps(collection_xml, end_track_id="30")
+    ).json()
+    assert donnees["tracks"][-1]["id"] == "30"
+    assert max(t["bpm"] for t in donnees["tracks"]) == 180.0
+
+
+def test_un_epingle_hors_criteres_est_signale(client, collection_xml):
+    # Le morceau 10 est CALME (mood 1) ; le set ne demande que le mood 5.
+    donnees = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10", moods=[5])
+    ).json()
+    assert donnees["tracks"][0]["id"] == "10"
+    assert "pin_off_filters" in {w["code"] for w in donnees["warnings"]}
+
+
+def test_un_epingle_inconnu_est_refuse(client, collection_xml):
+    reponse = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="999")
+    )
+    assert reponse.status_code == 400
+    assert "absent de la collection" in reponse.json()["detail"]
+
+
+def test_le_meme_morceau_des_deux_cotes_est_refuse(client, collection_xml):
+    reponse = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10", end_track_id="10")
+    )
+    assert reponse.status_code == 400
+    assert "à la fois" in reponse.json()["detail"]
+
+
+def test_un_set_descendant_est_refuse(client, collection_xml):
+    reponse = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="30", end_track_id="10")
+    )
+    assert reponse.status_code == 400
+    detail = reponse.json()["detail"]
+    assert "plus lent" in detail and "180" in detail and "160" in detail
+
+
+def test_un_depart_au_dela_du_bpm_max_demande_est_refuse(client, collection_xml):
+    reponse = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="30", bpm_max=170.0)
+    )
+    assert reponse.status_code == 400
+    assert "dépasse le BPM max" in reponse.json()["detail"]
+
+
+def test_les_cibles_suivent_la_borne_imposee(client, collection_xml):
+    donnees = client.post(
+        "/api/targets", json=corps(collection_xml, count=5, start_track_id="10")
+    ).json()
+    assert donnees["targets"][0]["bpm"] == 160.0
+
+
+def test_les_cibles_sans_epinglage_n_ouvrent_pas_la_collection(client, tmp_path):
+    # Propriété que la docstring de la route défend : sans épinglage, les cibles
+    # ne dépendent pas de la collection, et un chemin illisible n'empêche rien.
+    donnees = client.post(
+        "/api/targets", json=corps(tmp_path / "absent.xml", count=3)
+    ).json()
+    assert len(donnees["targets"]) == 3
+
+
+def test_les_cibles_avec_un_epingle_introuvable_sont_refusees(client, collection_xml):
+    reponse = client.post(
+        "/api/targets", json=corps(collection_xml, count=3, start_track_id="999")
+    )
+    assert reponse.status_code == 400
+
+
+def test_le_remplacement_respecte_la_borne_imposee(client, collection_xml):
+    jeu = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10")
+    ).json()
+    ids = [t["id"] for t in jeu["tracks"]]
+    donnees = client.post(
+        "/api/replace",
+        json=corps(collection_xml, start_track_id="10", track_ids=ids, position=1),
+    ).json()
+    assert donnees["tracks"][1]["bpm"] >= 160.0

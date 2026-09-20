@@ -95,6 +95,8 @@ class WarningCode(str, Enum):
     NO_KEY = "no_key"                    # tonalité absente ou illisible
     NO_TRACK_ID = "no_track_id"          # morceau sans TrackID, absent de la collection
     REPLACEMENT_SHORTAGE = "replacement_shortage"  # aucun remplaçant dispo pour `replace_at`
+    PIN_OFF_FILTERS = "pin_off_filters"   # morceau épinglé placé hors des critères
+    PIN_DROPPED = "pin_dropped"           # morceau épinglé non plaçable, set trop court
 
 
 @dataclass(frozen=True)

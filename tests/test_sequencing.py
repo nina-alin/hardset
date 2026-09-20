@@ -9,6 +9,7 @@ from dataclasses import replace
 import pytest
 
 from hardset.config import Weights, load_config
+from hardset.engine.pinning import PinningError
 from hardset.engine.sequencing import (
     SequencingError,
     cost,
@@ -443,3 +444,142 @@ def test_les_cibles_de_mood_suivent_lechelle_de_la_configuration():
     config_courte = replace(CONFIG, moods=("calme", "dansant", "vénère"))
     resultat = generate(collection_dense(), requete(duration_min=20), config_courte)
     assert max(c.mood for c in resultat.targets) <= 3.0
+
+
+# --- Sons de départ et de fin épinglés ------------------------------------
+#
+# `piste` et `collection_dense` sont définis en tête de ce fichier. Les
+# morceaux épinglés doivent appartenir à la collection : `resolve` les y
+# retrouve par leur id.
+
+def collection_avec_extremites() -> list[Track]:
+    """Trois morceaux au milieu, un lent et un rapide destinés à être épinglés."""
+    return [
+        piste("debut", 150.0, 3),
+        piste("a", 160.0, 3),
+        piste("b", 165.0, 3),
+        piste("c", 170.0, 3),
+        piste("fin", 200.0, 3),
+    ]
+
+
+def test_le_son_de_depart_ouvre_le_set():
+    jeu = generate(collection_dense(), requete(start_track_id="182-3"), CONFIG)
+    assert jeu.tracks[0].id == "182-3"
+
+
+def test_le_son_de_fin_ferme_le_set():
+    jeu = generate(collection_dense(), requete(end_track_id="182-3"), CONFIG)
+    assert jeu.tracks[-1].id == "182-3"
+
+
+def test_le_son_de_depart_impose_la_borne_du_vivier():
+    # Conséquence assumée : la borne accordée filtre tout le reste du set.
+    jeu = generate(collection_dense(), requete(start_track_id="182-3"), CONFIG)
+    assert min(track.bpm for track in jeu.tracks) == 182.0
+
+
+def test_un_morceau_epingle_n_est_pas_place_deux_fois():
+    jeu = generate(collection_dense(), requete(start_track_id="182-3"), CONFIG)
+    assert [t.id for t in jeu.tracks].count("182-3") == 1
+
+
+def test_les_epingles_comptent_dans_la_longueur_du_set():
+    jeu = generate(
+        collection_avec_extremites(),
+        requete(start_track_id="debut", end_track_id="fin"),
+        CONFIG,
+    )
+    # Trois morceaux au vivier, plus les deux épinglés.
+    assert len(jeu.tracks) == 5
+    assert jeu.tracks[0].id == "debut"
+    assert jeu.tracks[-1].id == "fin"
+
+
+def test_la_penurie_compte_les_epingles():
+    jeu = generate(
+        collection_avec_extremites(),
+        requete(start_track_id="debut", end_track_id="fin"),
+        CONFIG,
+    )
+    penurie = [w for w in jeu.warnings if w.code is WarningCode.SHORTAGE]
+    assert len(penurie) == 1
+    assert "5 éligibles" in penurie[0].message
+
+
+def test_shortage_warnings_compte_comme_generate():
+    collection = collection_avec_extremites()
+    demande = requete(start_track_id="debut", end_track_id="fin")
+    attendus = [w for w in generate(collection, demande, CONFIG).warnings
+                if w.code is WarningCode.SHORTAGE]
+    assert shortage_warnings(collection, demande) == attendus
+
+
+def test_un_epingle_hors_des_criteres_est_place_avec_un_avertissement():
+    collection = [*collection_dense(), piste("calme", 182.0, 1)]
+    jeu = generate(
+        collection,
+        requete(start_track_id="calme", moods=frozenset({4, 5})),
+        CONFIG,
+    )
+    assert jeu.tracks[0].id == "calme"
+    hors = [w for w in jeu.warnings if w.code is WarningCode.PIN_OFF_FILTERS]
+    assert len(hors) == 1
+    assert hors[0].track_ids == ("calme",)
+    assert "première" in hors[0].message
+
+
+def test_un_epingle_sans_aucun_mood_est_place_quand_meme():
+    # Sans épinglage, `eligible` l'écarterait : on ne saurait pas où le placer.
+    # Épinglé, il est placé d'autorité — et signalé.
+    muet = replace(piste("muet", 200.0, 3), moods=())
+    jeu = generate([*collection_dense(), muet], requete(end_track_id="muet"), CONFIG)
+    assert jeu.tracks[-1].id == "muet"
+    assert any(w.code is WarningCode.PIN_OFF_FILTERS for w in jeu.warnings)
+
+
+def test_un_epingle_dans_les_criteres_ne_produit_aucun_avertissement():
+    jeu = generate(collection_dense(), requete(start_track_id="182-3"), CONFIG)
+    assert not [w for w in jeu.warnings if w.code is WarningCode.PIN_OFF_FILTERS]
+
+
+def test_un_set_d_une_seule_position_garde_le_son_de_depart():
+    jeu = generate(
+        collection_avec_extremites(),
+        requete(start_track_id="debut", end_track_id="fin", duration_min=1),
+        CONFIG,
+    )
+    assert [t.id for t in jeu.tracks] == ["debut"]
+    abandon = [w for w in jeu.warnings if w.code is WarningCode.PIN_DROPPED]
+    assert len(abandon) == 1
+    assert abandon[0].track_ids == ("fin",)
+
+
+def test_un_set_d_une_seule_position_place_le_son_de_fin_s_il_est_seul():
+    jeu = generate(
+        collection_avec_extremites(),
+        requete(end_track_id="fin", duration_min=1),
+        CONFIG,
+    )
+    assert [t.id for t in jeu.tracks] == ["fin"]
+    assert not [w for w in jeu.warnings if w.code is WarningCode.PIN_DROPPED]
+
+
+def test_un_epingle_introuvable_fait_echouer_la_generation():
+    with pytest.raises(PinningError):
+        generate(collection_dense(), requete(start_track_id="inconnu"), CONFIG)
+
+
+def test_le_remplacement_respecte_la_plage_accordee():
+    demande = requete(start_track_id="182-3")
+    jeu = generate(collection_dense(), demande, CONFIG)
+    apres = replace_at(jeu, 1, collection_dense(), demande, CONFIG)
+    assert apres.tracks[1].id != jeu.tracks[1].id
+    assert apres.tracks[1].bpm >= 182.0
+
+
+def test_la_collection_peut_etre_un_iterateur():
+    # `generate` lit la collection deux fois désormais (résolution puis
+    # filtrage) : un itérateur ne doit pas être consommé au premier passage.
+    jeu = generate(iter(collection_dense()), requete(start_track_id="182-3"), CONFIG)
+    assert jeu.tracks[0].id == "182-3"

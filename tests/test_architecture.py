@@ -48,6 +48,7 @@ def test_un_type_inconnu_est_refuse():
 SONDE = (
     "import sys;"
     "import hardset.engine.sequencing;"
+    "import hardset.engine.pinning;"
     "import hardset.model;"
     "print(sorted(m for m in ('yaml', 'fastapi', 'uvicorn', 'starlette')"
     " if m in sys.modules))"

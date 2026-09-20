@@ -17,6 +17,7 @@ from hardset.config import Config, Weights
 from hardset.engine.curves import build_targets
 from hardset.engine.filtering import eligible
 from hardset.engine.harmony import key_penalty
+from hardset.engine.pinning import Pins, resolve
 from hardset.model import GeneratedSet, SetRequest, SetWarning, Target, Track, WarningCode
 
 
@@ -113,6 +114,89 @@ def _penurie(disponibles: int, vise: int) -> list[SetWarning]:
     ]
 
 
+def _vivier(
+    tracks: Iterable[Track], request: SetRequest
+) -> tuple[SetRequest, Pins, list[Track]]:
+    """Demande accordée aux épinglés, épinglés résolus, et vivier privé d'eux.
+
+    `tracks` est matérialisé d'abord : il peut être un itérateur, et il est
+    désormais lu deux fois — une pour résoudre les épinglés, une pour filtrer.
+
+    Les épinglés sont retirés du vivier qu'ils en fassent partie ou non. Un
+    morceau épinglé qui est aussi éligible serait sinon placé deux fois : une
+    fois d'autorité, une fois par tirage.
+    """
+    materiel = list(tracks)
+    accordee, pins = resolve(materiel, request)
+    exclus = {track.id for track in pins.epingles}
+    vivier = [
+        track
+        for track in _dedoublonne_par_id(eligible(materiel, accordee))
+        if track.id not in exclus
+    ]
+    return accordee, pins, vivier
+
+
+def _placement(pins: Pins, count: int) -> dict[int, Track]:
+    """Positions imposées par l'épinglage, pour un set de `count` positions.
+
+    Quand le set n'a qu'une position et que deux morceaux sont choisis, le
+    départ l'emporte : arbitraire, mais fixé et documenté, et préférable à un
+    échec pour un cas qui n'arrive que par accident — une durée demandée plus
+    courte que le temps de jeu d'un seul morceau.
+    """
+    impose: dict[int, Track] = {}
+    if count <= 0:
+        return impose
+    if pins.start is not None:
+        impose[0] = pins.start
+    if pins.end is not None and (count - 1) not in impose:
+        impose[count - 1] = pins.end
+    return impose
+
+
+def _avertissements_epinglage(
+    pins: Pins, impose: dict[int, Track], request: SetRequest
+) -> list[SetWarning]:
+    """Avertissements propres à l'épinglage, sur une demande déjà accordée.
+
+    Un morceau épinglé n'a traversé aucun filtre : c'est l'intention (un choix
+    explicite passe avant un critère coché), et c'est précisément pour ça qu'il
+    faut le dire.
+    """
+    avertissements: list[SetWarning] = []
+    places = {track.id for track in impose.values()}
+
+    for role, track in (("première", pins.start), ("dernière", pins.end)):
+        if track is None or track.id not in places:
+            continue
+        # La borne de BPM a été accordée à ce morceau : seuls le mood et le
+        # genre peuvent encore le faire échouer ici.
+        if not eligible([track], request):
+            avertissements.append(
+                SetWarning(
+                    code=WarningCode.PIN_OFF_FILTERS,
+                    message=(
+                        f"« {track.label} » est placé en {role} position bien qu'il "
+                        "ne corresponde pas aux critères demandés"
+                    ),
+                    track_ids=(track.id,),
+                )
+            )
+
+    # Seul le son de fin peut rester sur le carreau : `_placement` donne la
+    # position unique au départ quand les deux sont choisis.
+    if pins.end is not None and pins.end.id not in places:
+        avertissements.append(
+            SetWarning(
+                code=WarningCode.PIN_DROPPED,
+                message="le son de fin n'a pas pu être placé : le set ne compte qu'une position",
+                track_ids=(pins.end.id,),
+            )
+        )
+    return avertissements
+
+
 def shortage_warnings(tracks: Iterable[Track], request: SetRequest) -> list[SetWarning]:
     """Avertissement de pénurie que `generate` produirait pour cette demande.
 
@@ -122,27 +206,48 @@ def shortage_warnings(tracks: Iterable[Track], request: SetRequest) -> list[SetW
     la couche web, qui reconstruit le set courant à chaque remplacement, la
     recalcule ici même plutôt que de la perdre ou de la faire reporter par le
     navigateur.
+
+    Les morceaux épinglés comptent dans le décompte bien qu'ils ne viennent pas
+    du vivier : ils occupent une position du set. Sans ça, cette aide et
+    `generate` divergeraient d'au plus deux morceaux, et l'avertissement
+    reparaîtrait ou disparaîtrait au premier remplacement.
     """
-    return _penurie(len(_dedoublonne_par_id(eligible(tracks, request))), request.track_count)
+    _, pins, vivier = _vivier(tracks, request)
+    return _penurie(len(vivier) + len(pins.epingles), request.track_count)
 
 
 def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> GeneratedSet:
-    """Construit le set demandé, ou le plus long possible si les morceaux manquent."""
-    profile = _profile(request, config)
-    pool = _dedoublonne_par_id(eligible(tracks, request))
+    """Construit le set demandé, ou le plus long possible si les morceaux manquent.
+
+    Les morceaux épinglés (`SetRequest.start_track_id` / `end_track_id`) ouvrent
+    et ferment le set. Ils sont **placés, pas choisis** : `cost` ne les note
+    jamais, et leur position peut donc s'écarter de la cible — c'est une
+    contrainte imposée, pas un échec de sélection, et la courbe le montre.
+    """
+    profile = _profile(request, config)   # valide le profil avant toute autre chose
+    # `request` est rebindée sur la demande accordée aux épinglés : tout ce qui
+    # suit (cibles, filtrage, avertissements) doit voir les bornes dérivées.
+    request, pins, pool = _vivier(tracks, request)
 
     vise = request.track_count
-    count = min(vise, len(pool))
-
-    avertissements = _penurie(len(pool), vise)
+    disponibles = len(pool) + len(pins.epingles)
+    count = min(vise, disponibles)
 
     targets = build_targets(request, profile, count, config.mood_max)
-    rng = random.Random(request.seed)
+    impose = _placement(pins, count)
+    avertissements = [
+        *_penurie(disponibles, vise),
+        *_avertissements_epinglage(pins, impose, request),
+    ]
 
+    rng = random.Random(request.seed)
     retenus: list[Track] = []
     precedent: Track | None = None
     for target in targets:
-        precedent = _pick(pool, target, precedent, config.poids, rng)
+        epingle = impose.get(target.position)
+        precedent = epingle if epingle is not None else _pick(
+            pool, target, precedent, config.poids, rng
+        )
         retenus.append(precedent)
 
     return GeneratedSet(tracks=retenus, targets=targets, warnings=avertissements)
@@ -180,6 +285,10 @@ def replace_at(
 
     Le voisin précédent est le morceau effectivement en place à `position - 1`.
     Sans candidat disponible, le set est rendu intact avec un avertissement.
+
+    Les positions épinglées ne sont pas protégées : l'épinglage est une
+    contrainte de génération, pas un verrou d'édition, et la tracklist reste
+    modifiable à la main comme le reste.
     """
     _profile(request, config)   # valide le profil avant toute autre chose
     if not 0 <= position < len(generated.tracks):
@@ -188,11 +297,10 @@ def replace_at(
         )
 
     deja_places = {track.id for track in generated.tracks}
-    pool = [
-        track
-        for track in _dedoublonne_par_id(eligible(tracks, request))
-        if track.id not in deja_places
-    ]
+    # La demande est accordée ici aussi : le vivier de remplacement doit tenir
+    # dans la plage imposée par les sons épinglés, comme celui de `generate`.
+    request, _, vivier = _vivier(tracks, request)
+    pool = [track for track in vivier if track.id not in deja_places]
 
     target = generated.targets[position]
     precedent = generated.tracks[position - 1] if position > 0 else None

@@ -18,7 +18,12 @@ from pydantic import BaseModel, Field
 
 from hardset.config import Config
 from hardset.engine.curves import build_targets
-from hardset.engine.sequencing import SequencingError, generate, replace_at
+from hardset.engine.sequencing import (
+    SequencingError,
+    generate,
+    replace_at,
+    shortage_warnings,
+)
 from hardset.model import MOOD_MAX, MOOD_MIN, GeneratedSet, SetRequest, Track
 from hardset.rekordbox.reader import Collection, CollectionError, read_collection
 from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name, slug
@@ -252,10 +257,16 @@ def create_app(config: Config) -> FastAPI:
 
         # Les cibles sont recalculées pour la longueur reçue : après une suppression,
         # la courbe se redistribue sur les positions restantes.
+        #
+        # La pénurie relevée à la génération est recalculée, et non repartie de
+        # zéro : le moteur la préserve délibérément à travers les remplacements,
+        # et le set courant reconstruit ici doit la porter comme celui que
+        # `generate` avait rendu. Elle ne dépend que de la demande et de la
+        # collection, donc `shortage_warnings` la redonne à l'identique.
         courant = GeneratedSet(
             tracks=tracks,
             targets=build_targets(requete, profil, len(tracks)),
-            warnings=[],
+            warnings=shortage_warnings(lue.tracks, requete),
         )
         try:
             resultat = replace_at(courant, payload.position, lue.tracks, requete, config)

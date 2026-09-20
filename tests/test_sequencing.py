@@ -9,7 +9,13 @@ from dataclasses import replace
 import pytest
 
 from hardset.config import Weights, load_config
-from hardset.engine.sequencing import SequencingError, cost, generate, replace_at
+from hardset.engine.sequencing import (
+    SequencingError,
+    cost,
+    generate,
+    replace_at,
+    shortage_warnings,
+)
 from hardset.model import GeneratedSet, SetRequest, SetWarning, Target, Track, WarningCode
 
 # Chargé une seule fois pour les profils de courbe (`generate`) : les tests de
@@ -406,3 +412,26 @@ def test_generate_ne_mute_pas_letat_global_de_random():
     etat_avant = random.getstate()
     generate(collection_dense(), requete(seed=123), CONFIG)
     assert random.getstate() == etat_avant
+
+
+# --- Avertissement de pénurie calculé seul --------------------------------
+
+def test_shortage_warnings_signale_le_manque():
+    pool = [piste(str(i), 150.0 + i, (i % 5) + 1) for i in range(5)]
+    avertissements = shortage_warnings(pool, requete(duration_min=60))
+    assert [w.code for w in avertissements] == [WarningCode.SHORTAGE]
+    assert "30" in avertissements[0].message and "5" in avertissements[0].message
+
+
+def test_shortage_warnings_muet_quand_il_y_a_assez_de_morceaux():
+    assert shortage_warnings(collection_dense(), requete(duration_min=60)) == []
+
+
+def test_shortage_warnings_donne_le_meme_avertissement_que_generate():
+    # C'est la garantie que la couche web recalcule exactement ce que
+    # `generate` aurait produit, et non une approximation.
+    pool = [piste(str(i), 150.0 + i, (i % 5) + 1) for i in range(5)]
+    demande = requete(duration_min=60)
+    depuis_generate = [w for w in generate(pool, demande, CONFIG).warnings
+                       if w.code == WarningCode.SHORTAGE]
+    assert shortage_warnings(pool, demande) == depuis_generate

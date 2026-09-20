@@ -101,6 +101,31 @@ def _profile(request: SetRequest, config: Config):
         ) from exc
 
 
+def _penurie(disponibles: int, vise: int) -> list[SetWarning]:
+    """Avertissement de pénurie, ou rien du tout si le compte y est."""
+    if disponibles >= vise:
+        return []
+    return [
+        SetWarning(
+            code=WarningCode.SHORTAGE,
+            message=f"{vise} morceaux demandés, {disponibles} éligibles",
+        )
+    ]
+
+
+def shortage_warnings(tracks: Iterable[Track], request: SetRequest) -> list[SetWarning]:
+    """Avertissement de pénurie que `generate` produirait pour cette demande.
+
+    La pénurie est une propriété de la demande et de la collection, pas du set
+    affiché : elle survit donc à tout remplacement
+    (`_sans_avertissements_de_remplacement`). Cette aide est publique pour que
+    la couche web, qui reconstruit le set courant à chaque remplacement, la
+    recalcule ici même plutôt que de la perdre ou de la faire reporter par le
+    navigateur.
+    """
+    return _penurie(len(_dedoublonne_par_id(eligible(tracks, request))), request.track_count)
+
+
 def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> GeneratedSet:
     """Construit le set demandé, ou le plus long possible si les morceaux manquent."""
     profile = _profile(request, config)
@@ -109,14 +134,7 @@ def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> Ge
     vise = request.track_count
     count = min(vise, len(pool))
 
-    avertissements: list[SetWarning] = []
-    if count < vise:
-        avertissements.append(
-            SetWarning(
-                code=WarningCode.SHORTAGE,
-                message=f"{vise} morceaux demandés, {len(pool)} éligibles",
-            )
-        )
+    avertissements = _penurie(len(pool), vise)
 
     targets = build_targets(request, profile, count)
     rng = random.Random(request.seed)

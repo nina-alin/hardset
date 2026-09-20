@@ -383,3 +383,50 @@ def test_collection_sans_droit_daces_ne_dit_pas_introuvable(client, tmp_path):
     detail = reponse.json()["detail"]
     assert "introuvable" not in detail
     assert "lire" in detail
+
+
+# --- Survie de l'avertissement de pénurie aux remplacements ---------------
+# Le moteur préserve délibérément la pénurie de `generate` à travers les
+# remplacements (`_sans_avertissements_de_remplacement`). La route de
+# remplacement reconstruit le set courant : elle doit donc recalculer cet
+# avertissement, et non le perdre ni le faire reporter par le navigateur.
+
+def test_penurie_de_generate_survit_a_un_remplacement_reussi(client, collection_xml):
+    genere = client.post("/api/generate", json=corps(collection_xml, duration_min=600)).json()
+    assert "shortage" in [w["code"] for w in genere["warnings"]]
+
+    # Quelques lignes supprimées dans la page : il reste des remplaçants
+    # disponibles, le remplacement réussit.
+    ids = [t["id"] for t in genere["tracks"]][:30]
+    donnees = client.post(
+        "/api/replace",
+        json=corps(collection_xml, duration_min=600, track_ids=ids, position=0),
+    ).json()
+
+    assert donnees["tracks"][0]["id"] != ids[0]
+    assert "shortage" in [w["code"] for w in donnees["warnings"]]
+
+
+def test_penurie_de_generate_survit_a_un_remplacement_impossible(client, collection_xml):
+    genere = client.post("/api/generate", json=corps(collection_xml, duration_min=600)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+
+    # Sans suppression, la pénurie a consommé toute la collection : plus aucun
+    # remplaçant. Les deux avertissements doivent coexister.
+    donnees = client.post(
+        "/api/replace",
+        json=corps(collection_xml, duration_min=600, track_ids=ids, position=0),
+    ).json()
+
+    codes = [w["code"] for w in donnees["warnings"]]
+    assert "shortage" in codes
+    assert "replacement_shortage" in codes
+
+
+def test_pas_de_penurie_inventee_par_le_remplacement(client, collection_xml):
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+    donnees = client.post(
+        "/api/replace", json=corps(collection_xml, track_ids=ids, position=2)
+    ).json()
+    assert "shortage" not in [w["code"] for w in donnees["warnings"]]

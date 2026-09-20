@@ -100,8 +100,11 @@ function render() {
   const corps = $('tracklist').querySelector('tbody');
   if (!jeu) {
     // Pas de set (au démarrage, ou après le chargement d'une nouvelle
-    // collection) : la tracklist ne doit garder aucune ligne périmée.
+    // collection) : la tracklist ne doit garder aucune ligne périmée, et la
+    // courbe BPM (qui décrit ce set précis) ne doit pas rester affichée avec
+    // les données de la collection précédente.
     corps.replaceChildren();
+    window.renderCurve(null, []);
     return;
   }
 
@@ -143,6 +146,7 @@ function render() {
   });
 
   renderAvertissements(jeu.warnings);
+  window.renderCurve(jeu.targets, jeu.tracks);
 }
 
 // --- Actions --------------------------------------------------------------

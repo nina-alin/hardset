@@ -1,7 +1,10 @@
 """Tests du lecteur de collection Rekordbox.
 
-Les cas de parsing des My Tags proviennent des valeurs de `Comments` observées
-sur l'export réel (cf. tools/inspect_collection.py, tâche 1).
+Les cas de parsing des My Tags reposent sur l'hypothèse non vérifiée de format
+`/* tag / tag */` (voir la docstring de hardset/rekordbox/reader.py) : ils décrivent
+le comportement du parseur pour ce format hypothétique, pas un format observé sur un
+export réel. `tools/inspect_collection.py` est la sonde prévue pour confronter cette
+hypothèse à un export réel dès qu'on en aura un.
 """
 
 from pathlib import Path
@@ -10,7 +13,14 @@ import pytest
 
 from hardset.config import load_config
 from hardset.model import WarningCode
-from hardset.rekordbox.reader import CollectionError, parse_my_tags, read_collection
+from hardset.rekordbox.reader import (
+    Collection,
+    CollectionError,
+    _float,
+    _int,
+    parse_my_tags,
+    read_collection,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "collection_extrait.xml"
 
@@ -149,6 +159,25 @@ def test_bpm_illisible_donne_zero(tmp_path):
     assert collection.tracks[0].duration_s == 0
 
 
+def test_track_id_absent_ignore_et_signale(tmp_path):
+    chemin = ecrire_xml(
+        tmp_path,
+        '<TRACK Name="Sans id" Artist="Anonyme" AverageBpm="180" Tonality="Am"'
+        ' TotalTime="200" Location="file://x" Comments="/* Hardcore / vénère */"/>'
+        '<TRACK TrackID="9" Name="Avec id" Artist="B" AverageBpm="140" Tonality="Am"'
+        ' TotalTime="200" Location="file://x" Comments="/* Hardcore / calme */"/>',
+    )
+    collection = read_collection(chemin, load_config())
+    # Le morceau sans TrackID ne peut pas être référencé en playlist : il est
+    # effectivement absent de la collection, mais l'absence doit être signalée.
+    assert len(collection.tracks) == 1
+    assert collection.tracks[0].id == "9"
+    codes = {w.code for w in collection.warnings}
+    assert WarningCode.NO_TRACK_ID in codes
+    avertissement = next(w for w in collection.warnings if w.code == WarningCode.NO_TRACK_ID)
+    assert avertissement.track_ids == ("Anonyme — Sans id",)
+
+
 def test_fichier_absent(tmp_path):
     with pytest.raises(CollectionError, match="introuvable"):
         read_collection(tmp_path / "rien.xml", load_config())
@@ -161,12 +190,62 @@ def test_xml_invalide(tmp_path):
         read_collection(chemin, load_config())
 
 
-# --- Lecture de l'extrait réel -------------------------------------------
+def test_chemin_est_un_repertoire(tmp_path):
+    with pytest.raises(CollectionError, match="lire"):
+        read_collection(tmp_path, load_config())
 
-@pytest.mark.skipif(not FIXTURE.exists(), reason="fixture d'export réel absente")
-def test_extrait_reel_est_exploitable():
+
+def test_fichier_sans_droit_de_lecture(tmp_path):
+    chemin = tmp_path / "prive.xml"
+    chemin.write_text("<DJ_PLAYLISTS/>", encoding="utf-8")
+    chemin.chmod(0o000)
+    try:
+        with pytest.raises(CollectionError, match="lire"):
+            read_collection(chemin, load_config())
+    finally:
+        chemin.chmod(0o644)
+
+
+# --- Plage de BPM ---------------------------------------------------------
+
+def test_bpm_range_collection_vide():
+    assert Collection(tracks=()).bpm_range == (0.0, 0.0)
+
+
+def test_bpm_range_tous_bpm_a_zero(tmp_path):
+    chemin = ecrire_xml(
+        tmp_path,
+        '<TRACK TrackID="10" Name="T" Artist="A" AverageBpm="0" Tonality="Am"'
+        ' TotalTime="200" Location="file://x" Comments="/* Hardcore */"/>',
+    )
+    collection = read_collection(chemin, load_config())
+    assert collection.bpm_range == (0.0, 0.0)
+
+
+# --- Conversions défensives ------------------------------------------------
+
+@pytest.mark.parametrize("value", ["", None, "N/A"])
+def test_float_valeur_non_numerique_ou_absente_donne_zero(value):
+    assert _float(value) == 0.0
+
+
+@pytest.mark.parametrize("value", ["", None, "N/A"])
+def test_int_valeur_non_numerique_ou_absente_donne_zero(value):
+    assert _int(value) == 0
+
+
+# --- Lecture de bout en bout d'une fixture complète ------------------------
+
+@pytest.mark.skipif(not FIXTURE.exists(), reason="fixture absente")
+def test_lecture_complete_de_la_fixture_couvre_tous_les_cas():
+    """Ne valide PAS le format d'un export Rekordbox réel : la fixture est fabriquée
+    à la main sous l'hypothèse `/* tag / tag */` (voir docstring du module), pas
+    extraite d'un vrai export. Atteste seulement que le lecteur traite de bout en
+    bout une collection complète couvrant tous les cas déjà testés unitairement
+    (mood unique, mood multiple, mood absent, tonalité illisible, plusieurs genres,
+    etc.) sans lever d'exception et en produisant des résultats cohérents.
+    """
     collection = read_collection(FIXTURE, load_config())
     assert len(collection.tracks) >= 8
-    # Au moins un morceau complètement exploitable, sinon le format a changé.
     assert any(t.mood is not None and t.genres for t in collection.tracks)
     assert collection.genres

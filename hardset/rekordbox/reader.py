@@ -1,9 +1,14 @@
 """Lecture d'un export XML de collection Rekordbox.
 
-Rekordbox écrit les My Tags dans l'attribut `Comments` du nœud TRACK, sous la forme
-`/* tag / tag */`, éventuellement entourée d'un commentaire libre. Le XML ne
-transporte pas la catégorie du tag : la distinction genre / mood se fait donc par la
-configuration — tout tag reconnu comme mood est le mood, **tout autre tag est un genre**.
+Hypothèse non vérifiée : Rekordbox écrirait les My Tags dans l'attribut `Comments`
+du nœud TRACK, sous la forme `/* tag / tag */`, éventuellement entourée d'un
+commentaire libre. Aucun export Rekordbox réel n'a jamais été lu par ce projet :
+cette hypothèse n'a donc jamais été confrontée à un vrai fichier. `tools/
+inspect_collection.py` est la sonde prévue pour trancher la question dès qu'un
+export réel sera disponible ; si l'export réel la contredit, c'est ici — le motif et
+le séparateur ci-dessous — qu'il faut regarder en premier. Le XML ne transporte pas
+la catégorie du tag : la distinction genre / mood se fait donc par la configuration
+— tout tag reconnu comme mood est le mood, **tout autre tag est un genre**.
 """
 
 from __future__ import annotations
@@ -17,8 +22,9 @@ from hardset.config import Config
 from hardset.engine.harmony import to_camelot
 from hardset.model import SetWarning, Track, WarningCode, normalize_tag
 
-# Bloc de My Tags dans `Comments`. Le format exact est vérifié en tâche 1 ; si
-# l'export réel diffère, c'est cette expression et le séparateur qui changent.
+# Bloc de My Tags dans `Comments` : encode l'hypothèse non vérifiée décrite dans la
+# docstring du module. Si un export réel la contredit, c'est cette expression et le
+# séparateur qui changent en premier.
 _TAGS_RE = re.compile(r"/\*(.*?)\*/", re.DOTALL)
 _TAG_SEPARATOR = "/"
 
@@ -86,7 +92,10 @@ def read_collection(path: Path, config: Config) -> Collection:
     """Lit l'export XML et classe les tags de chaque morceau en genres et mood.
 
     Un morceau sans mood, ou portant plusieurs moods, est **conservé** dans la
-    collection avec `mood = None` : il sera écarté à la sélection, et signalé ici.
+    collection avec `mood = None` : il sera exclu de la sélection, et signalé ici.
+    Un morceau sans TrackID, en revanche, ne peut pas être référencé dans une
+    playlist : il est retiré de la collection elle-même (pas seulement de la
+    sélection), et signalé ici aussi.
     """
     chemin = Path(path).expanduser()
     try:
@@ -95,17 +104,28 @@ def read_collection(path: Path, config: Config) -> Collection:
         raise CollectionError(f"export introuvable : {chemin}") from exc
     except ElementTree.ParseError as exc:
         raise CollectionError(f"XML illisible dans {chemin} : {exc}") from exc
+    except OSError as exc:
+        # Chemin fourni par l'utilisatrice via un formulaire : un répertoire
+        # (`IsADirectoryError`) ou un fichier sans droit de lecture
+        # (`PermissionError`) doivent produire un message clair, pas une
+        # exception brute remontée jusqu'à l'interface web.
+        raise CollectionError(f"impossible de lire {chemin} : {exc}") from exc
 
     tracks: list[Track] = []
     sans_mood: list[str] = []
     moods_multiples: list[str] = []
     sans_cle: list[str] = []
+    sans_track_id: list[str] = []
 
     for noeud in racine.findall("./COLLECTION/TRACK"):
         attrs = dict(noeud.attrib)
         identifiant = attrs.get("TrackID", "")
         if not identifiant:
-            continue  # un nœud sans TrackID ne peut pas être référencé en playlist
+            # Un nœud sans TrackID ne peut pas être référencé dans une playlist :
+            # il est écarté de la collection elle-même. Il n'a pas de TrackID à
+            # inscrire dans `track_ids` ; artiste/titre servent à le retrouver.
+            sans_track_id.append(f"{attrs.get('Artist', '?')} — {attrs.get('Name', '?')}")
+            continue
 
         genres: list[str] = []
         moods: list[int] = []
@@ -143,8 +163,21 @@ def read_collection(path: Path, config: Config) -> Collection:
 
     avertissements: list[SetWarning] = []
     for code, ids, gabarit in (
-        (WarningCode.MULTIPLE_MOODS, moods_multiples, "{n} morceaux portent plusieurs moods et sont écartés"),
-        (WarningCode.NO_MOOD, sans_mood, "{n} morceaux sans mood sont écartés"),
+        (
+            WarningCode.NO_TRACK_ID,
+            sans_track_id,
+            "{n} morceaux sans TrackID sont ignorés (absents de la collection)",
+        ),
+        (
+            WarningCode.MULTIPLE_MOODS,
+            moods_multiples,
+            "{n} morceaux portent plusieurs moods et sont exclus de la sélection (mais restent dans la collection)",
+        ),
+        (
+            WarningCode.NO_MOOD,
+            sans_mood,
+            "{n} morceaux sans mood sont exclus de la sélection (mais restent dans la collection)",
+        ),
         (WarningCode.NO_KEY, sans_cle, "{n} morceaux sans tonalité analysée"),
     ):
         if ids:

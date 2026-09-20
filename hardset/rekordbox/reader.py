@@ -83,7 +83,12 @@ class Collection:
 
     @property
     def bpm_range(self) -> tuple[float, float]:
-        """Plage de BPM des morceaux exploitables, pour préremplir le formulaire."""
+        """Plage de BPM des morceaux à BPM renseigné, pour préremplir le formulaire.
+
+        Tous les morceaux dont le BPM est supérieur à zéro comptent, y compris
+        ceux qui seront exclus de la sélection faute de mood unique : le
+        formulaire propose une plage, il ne présume pas de la demande.
+        """
         bpms = [t.bpm for t in self.tracks if t.bpm > 0]
         return (min(bpms), max(bpms)) if bpms else (0.0, 0.0)
 

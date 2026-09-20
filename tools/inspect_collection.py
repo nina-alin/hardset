@@ -1,7 +1,12 @@
 """Sonde de diagnostic d'un export XML Rekordbox.
 
-Ne fait partie ni du paquet ni des tests : sert une seule fois, à vérifier que les
-My Tags sont exploitables depuis le XML avant d'écrire le lecteur.
+Ne fait partie ni du paquet ni des tests. Le lecteur est écrit, et il repose sur
+une hypothèse de format jamais confrontée à un vrai export (My Tags dans
+`Comments`, sous la forme `/* tag / tag */` : voir la docstring de
+`hardset/rekordbox/reader.py`). Cette sonde sert à confronter cette hypothèse à
+un export réel dès qu'on en aura un : son expression d'extraction est
+volontairement la même que celle du lecteur, pour que ce qu'elle voit soit ce
+que le lecteur verra.
 
 Usage : python3 tools/inspect_collection.py ~/rekordbox.xml
 """
@@ -14,7 +19,9 @@ from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree
 
-TAGS_RE = re.compile(r"/\*(.+?)\*/", re.DOTALL)
+# Identique à `_TAGS_RE` du lecteur : `.*?` et non `.+?`, sans quoi la sonde
+# ne verrait pas un bloc de tags vide (`/* */`) que le lecteur, lui, accepte.
+TAGS_RE = re.compile(r"/\*(.*?)\*/", re.DOTALL)
 
 
 def main() -> int:

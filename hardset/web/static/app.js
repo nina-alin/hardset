@@ -41,14 +41,17 @@ async function api(route, corps) {
 
 // Désactive le ou les boutons donnés le temps de l'action asynchrone, pour
 // empêcher qu'un double-clic ne déclenche deux appels réseau concurrents sur
-// le même état. Les erreurs sont affichées comme avertissement.
+// le même état. Les erreurs sont affichées comme avertissement. Rend `true` si
+// l'action est allée au bout, pour les appelants qui ont autre chose à ranger.
 async function proteger(boutons, action) {
   const liste = Array.isArray(boutons) ? boutons : [boutons];
   for (const bouton of liste) bouton.disabled = true;
   try {
     await action();
+    return true;
   } catch (erreur) {
     renderAvertissements([{ message: erreur.message }]);
+    return false;
   } finally {
     for (const bouton of liste) bouton.disabled = false;
   }
@@ -152,15 +155,14 @@ function render() {
 // --- Actions --------------------------------------------------------------
 
 async function chargerCollection() {
-  const bouton = $('charger');
-  bouton.disabled = true;
   $('etat-collection').textContent = 'lecture…';
   // Un set affiché ne survit pas au chargement d'une autre collection : il ne
   // lui appartient plus, et le laisser à l'écran mènerait à des actions qui
   // échouent avec un message serveur correct mais déroutant.
   state.set = null;
   render();
-  try {
+
+  const charge = await proteger($('charger'), async () => {
     const reponse = await api('/api/collection', { path: $('path').value });
     const donnees = await reponse.json();
     state.collection = donnees;
@@ -185,12 +187,11 @@ async function chargerCollection() {
 
     $('generer').disabled = false;
     renderAvertissements(donnees.warnings);
-  } catch (erreur) {
-    $('etat-collection').textContent = '';
-    renderAvertissements([{ message: erreur.message }]);
-  } finally {
-    bouton.disabled = false;
-  }
+  });
+
+  // La lecture a échoué : `proteger` a déjà affiché l'erreur, il reste à
+  // retirer le « lecture… » qui n'aboutira pas.
+  if (!charge) $('etat-collection').textContent = '';
 }
 
 async function generer() {

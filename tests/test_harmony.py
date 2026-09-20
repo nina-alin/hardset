@@ -43,6 +43,8 @@ from hardset.engine.harmony import key_penalty, to_camelot
         (None, None),
         ("13A", None),
         ("0B", None),
+        ("13m", None),
+        ("0d", None),
         ("H#", None),
         ("inconnu", None),
     ],

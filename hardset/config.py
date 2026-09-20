@@ -14,6 +14,26 @@ from hardset.model import MOOD_MAX, normalize_tag
 
 DEFAULT_CONFIG_PATH = Path("hardset.yaml")
 
+# Exemplaire livré avec le paquet, à côté du code. Sert de repli quand le
+# répertoire courant ne contient pas de `hardset.yaml` : la commande `hardset`
+# se lance depuis n'importe où, et « configuration introuvable » au premier
+# lancement depuis ailleurs que le dépôt n'aide personne. `--config` reste le
+# moyen de désigner explicitement un autre fichier.
+_CONFIG_LIVREE = Path(__file__).resolve().parent.parent / "hardset.yaml"
+
+
+def _chemin_par_defaut() -> Path:
+    """`hardset.yaml` du répertoire courant, sinon celui livré avec le paquet.
+
+    Le fichier du répertoire courant garde la priorité : c'est là que se
+    trouvent les réglages de la personne qui lance l'outil. Si le paquet est
+    installé sans ses sources, `_CONFIG_LIVREE` n'existe pas et le message
+    d'erreur nomme `hardset.yaml`, comme avant.
+    """
+    if DEFAULT_CONFIG_PATH.exists() or not _CONFIG_LIVREE.exists():
+        return DEFAULT_CONFIG_PATH
+    return _CONFIG_LIVREE
+
 # Types de courbe reconnus, et paramètres admis pour chacun (cf. tâche 6).
 CURVE_PARAMS: dict[str, set[str]] = {
     "lineaire": {"depart", "arrivee"},
@@ -170,7 +190,7 @@ def load_config(path: Path | None = None) -> Config:
     # pour ses dataclasses sans avoir le droit de charger `yaml` transitivement.
     import yaml
 
-    chemin = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    chemin = Path(path) if path is not None else _chemin_par_defaut()
     try:
         # Lu puis normalisé, et non `... or {}` : un fichier ne contenant que
         # `0` ou `false` est un mapping absent au sens YAML (`None`), pas une

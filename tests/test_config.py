@@ -801,3 +801,38 @@ def test_moods_doublon_normalise_refuse(tmp_path):
     )
     with pytest.raises(ConfigError, match="doublon"):
         load_config(fichier)
+
+
+# --- Chemin de configuration par défaut -----------------------------------
+# La commande `hardset` s'utilise depuis n'importe où : sans `hardset.yaml`
+# dans le répertoire courant, elle retombe sur l'exemplaire livré avec le
+# paquet plutôt que d'échouer sur « configuration introuvable ».
+
+def test_sans_fichier_dans_le_repertoire_courant_on_prend_celui_du_paquet(
+    monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    config = load_config()
+    assert config.moods
+    assert config.profils
+
+
+def test_le_fichier_du_repertoire_courant_a_la_priorite(monkeypatch, tmp_path):
+    (tmp_path / "hardset.yaml").write_text(
+        "moods: [calme]\n"
+        "profils:\n"
+        "  simple:\n"
+        "    bpm: {type: lineaire}\n"
+        "    mood: {type: lineaire}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    config = load_config()
+    assert config.moods == ("calme",)
+    assert list(config.profils) == ["simple"]
+
+
+def test_un_chemin_explicite_reste_prioritaire(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigError, match="introuvable"):
+        load_config(tmp_path / "absent.yaml")

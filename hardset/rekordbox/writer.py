@@ -1,11 +1,16 @@
-"""Écriture du XML de playlist réimportable dans Rekordbox.
+"""Écriture du XML de playlist destinée à être réimportée dans Rekordbox.
 
-Rekordbox exige que tout morceau référencé dans une playlist figure dans le bloc
-COLLECTION du même fichier. Les nœuds TRACK sont donc recopiés depuis `raw_attrs`,
-sans aucune modification : l'outil n'a pas à comprendre les attributs Rekordbox pour
-les restituer.
+D'après la documentation du format, Rekordbox exige que tout morceau référencé
+dans une playlist figure dans le bloc COLLECTION du même fichier. Les nœuds TRACK
+sont donc recopiés depuis `raw_attrs`, sans aucune modification : l'outil n'a pas
+à comprendre les attributs Rekordbox pour les restituer.
 
-L'import est additif : supprimer la playlist importée ne laisse aucune trace.
+Hypothèse non vérifiée, elle aussi tirée de la documentation du format : l'import
+serait additif, et supprimer ensuite la playlist importée ne laisserait aucune
+trace dans la collection Rekordbox. Aucun fichier produit par ce module n'a jamais
+été réimporté dans Rekordbox : cette hypothèse n'a donc jamais été confrontée à un
+import réel. L'import réel est prévu en tâche 12 ; c'est à ce moment-là qu'elle
+sera vérifiée.
 """
 
 from __future__ import annotations
@@ -74,6 +79,11 @@ def build_playlist_xml(tracks: Sequence[Track], playlist_name: str) -> bytes:
     for track in tracks:
         ElementTree.SubElement(playlist, "TRACK", {"Key": track.id})
 
+    # Déclaration écrite à la main, en guillemets doubles : celle que produit
+    # `ElementTree` (xml_declaration=True) utilise des guillemets simples, valides
+    # mais inhabituels dans les fichiers XML réels. Le parseur de Rekordbox nous est
+    # inconnu et ne pourra être testé qu'à la tâche 12 : autant coller à la forme la
+    # plus courante, à coût nul.
     tampon = io.BytesIO()
-    ElementTree.ElementTree(racine).write(tampon, encoding="UTF-8", xml_declaration=True)
-    return tampon.getvalue()
+    ElementTree.ElementTree(racine).write(tampon, encoding="UTF-8", xml_declaration=False)
+    return b'<?xml version="1.0" encoding="UTF-8"?>\n' + tampon.getvalue()

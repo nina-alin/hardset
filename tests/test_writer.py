@@ -64,6 +64,16 @@ def test_declaration_xml_presente():
     assert xml.startswith(b"<?xml")
 
 
+def test_declaration_xml_en_guillemets_doubles():
+    # `ElementTree.write(xml_declaration=True)` produit des guillemets simples ;
+    # on écrit la déclaration nous-mêmes pour rester au plus près des fichiers XML
+    # du monde réel (guillemets doubles), faute de pouvoir tester le parseur de
+    # Rekordbox avant la tâche 12.
+    xml = build_playlist_xml([piste("1")], "S")
+    premiere_ligne = xml.split(b"\n", 1)[0]
+    assert premiere_ligne == b'<?xml version="1.0" encoding="UTF-8"?>'
+
+
 # --- Intégrité des références --------------------------------------------
 
 def test_chaque_cle_de_playlist_existe_dans_collection():
@@ -84,6 +94,35 @@ def test_attributs_dorigine_recopies_sans_perte():
 
     for cle, valeur in track.raw_attrs.items():
         assert noeud.get(cle) == valeur
+
+
+def test_raw_attrs_vide_utilise_le_repli_construit_depuis_track():
+    # Quand `raw_attrs` est vide, le TRACK est reconstruit depuis les champs
+    # typés de `Track` (pas de Tonality, Comments ou autre attribut d'origine :
+    # ils n'existent pas en dehors de `raw_attrs`).
+    track = Track(
+        id="1",
+        artist="Art",
+        title="Tit",
+        bpm=180.0,
+        camelot="8A",
+        duration_s=200,
+        location="file://x.mp3",
+        genres=("Hardcore",),
+        mood=4,
+        raw_attrs={},
+    )
+    xml = build_playlist_xml([track], "S")
+    noeud = ElementTree.fromstring(xml).find("COLLECTION/TRACK")
+
+    assert noeud.attrib == {
+        "TrackID": "1",
+        "Name": "Tit",
+        "Artist": "Art",
+        "AverageBpm": "180.00",
+        "TotalTime": "200",
+        "Location": "file://x.mp3",
+    }
 
 
 def test_un_morceau_place_deux_fois_napparait_quune_fois_dans_collection():
@@ -138,3 +177,29 @@ def test_nom_par_defaut_sans_genre():
 def test_nom_par_defaut_assainit_les_genres():
     nom = default_playlist_name(requete(genres=frozenset({"Vénère Core"})), date(2026, 9, 18))
     assert nom == "venere-core-montee-90min-2026-09-18"
+
+
+def test_nom_par_defaut_avec_une_longue_liste_de_genres():
+    nom = default_playlist_name(
+        requete(
+            genres=frozenset(
+                {"Hardcore", "Uptempo", "Rawstyle", "Frenchcore", "Speedcore"}
+            )
+        ),
+        date(2026, 9, 18),
+    )
+    assert nom == "frenchcore-hardcore-rawstyle-speedcore-uptempo-montee-90min-2026-09-18"
+
+
+def test_nom_par_defaut_avec_un_genre_vide():
+    # Observé : une chaîne de genre vide s'assainit en chaîne vide, ce qui laisse
+    # un tiret de tête dans le nom produit — comportement actuel, pas un choix
+    # délibéré, mais rien n'indique qu'il soit faux : ce cas ne devrait pas se
+    # présenter en pratique (le formulaire ne propose pas de genre vide).
+    nom = default_playlist_name(requete(genres=frozenset({""})), date(2026, 9, 18))
+    assert nom == "-montee-90min-2026-09-18"
+
+
+def test_nom_par_defaut_sans_date_utilise_la_date_du_jour():
+    nom = default_playlist_name(requete())
+    assert nom == f"tous-montee-90min-{date.today().isoformat()}"

@@ -88,9 +88,25 @@ function renderAvertissements(avertissements) {
   }
 }
 
-function moodLabel(valeur) {
-  const mood = state.config.moods.find((m) => m.value === valeur);
-  return mood ? `${valeur} ${mood.label}` : String(valeur ?? '—');
+// Un morceau peut porter plusieurs moods : `track.mood` est alors leur moyenne
+// (2,5 par exemple), qui ne correspond à aucun libellé. On étiquette donc à
+// partir de `track.moods`, les niveaux réellement tagués, et on n'affiche la
+// moyenne que lorsqu'elle s'en distingue.
+function moodLabel(track) {
+  const niveaux = track.moods ?? [];
+  if (!niveaux.length) return '—';
+  const libelles = niveaux.map((v) => {
+    const mood = state.config.moods.find((m) => m.value === v);
+    return mood ? mood.label : String(v);
+  });
+  if (niveaux.length === 1) return `${niveaux[0]} ${libelles[0]}`;
+  return `${formateMood(track.mood)} ${libelles.join(' + ')}`;
+}
+
+// 3 plutôt que « 3.0 », mais 2,5 conservé : la moyenne de deux moods voisins
+// est l'information utile, pas un arrondi qui la ferait passer pour un niveau.
+function formateMood(valeur) {
+  return Number.isInteger(valeur) ? String(valeur) : valeur.toFixed(1);
 }
 
 function render() {
@@ -142,7 +158,7 @@ function render() {
       el('td', { textContent: track.title }),
       el('td', { textContent: track.bpm.toFixed(1) }),
       el('td', { textContent: track.camelot ?? '—' }),
-      el('td', { textContent: moodLabel(track.mood) }),
+      el('td', { textContent: moodLabel(track) }),
       el('td', { textContent: track.genres.join(', ') }),
       actions,
     ]));

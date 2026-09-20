@@ -15,7 +15,7 @@ from hardset.web.app import create_app
 CONFIG = load_config()
 
 # Les cinq moods de la configuration livrée, pour tagger la collection de test.
-MOODS = ("calme", "dansant", "un peu vénère", "vénère", "c'est du bruit")
+MOODS = ("CALME", "DANSANT", "UN PEU VNR", "CARREMENT VNR", "C DU BRUIT")
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_page_servie(client):
 def test_config_expose_profils_et_moods(client):
     donnees = client.get("/api/config").json()
     assert [p["key"] for p in donnees["profils"]] == ["montee", "warmup-long", "plateau", "vagues"]
-    assert donnees["moods"][0] == {"value": 1, "label": "calme"}
+    assert donnees["moods"][0] == {"value": 1, "label": "CALME"}
     assert len(donnees["moods"]) == 5
 
 
@@ -132,7 +132,7 @@ def test_generation(client, collection_xml):
     assert len(donnees["tracks"]) == 10
     assert len(donnees["targets"]) == 10
     premier = donnees["tracks"][0]
-    assert set(premier) == {"id", "artist", "title", "bpm", "camelot", "mood", "genres"}
+    assert set(premier) == {"id", "artist", "title", "bpm", "camelot", "mood", "moods", "genres"}
     assert donnees["playlist_name"].endswith("min-" + donnees["date"])
     assert isinstance(donnees["warnings"], list)
 

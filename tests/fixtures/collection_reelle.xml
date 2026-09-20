@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Extrait VERBATIM d'un export rekordbox 7.2.18 réel (collection de 706
+     morceaux, exporté le 2026-09-20, réglage « ajouter les My Tags aux
+     Comments » activé). Contrairement à `collection_extrait.xml`, qui est
+     fabriquée à la main, ce fichier n'a subi qu'une sélection de huit nœuds
+     TRACK et l'élagage de leurs enfants au-delà des deux premiers. Les
+     attributs, et notamment le format des My Tags dans `Comments`, sont
+     ceux que Rekordbox a écrits.
+
+     Les huit morceaux couvrent : mood unique, mood double, mood triple,
+     aucun tag, aucun genre, tag de plage de BPM ouvert (`195+`), et les
+     tags d'état `OPENER` / `TROP DUR A MIXER`. -->
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="7.2.18" Company="AlphaTheta"/>
+  <COLLECTION Entries="8">
+    <TRACK TrackID="238609622" Name="Bientôt" Artist="Von Bikräv; Sidisid; Butter Bullets" Composer="" Album="Les Meilleurs" Grouping="" Genre="" Kind="Fichier MP3" Size="8909398" TotalTime="271" DiscNumber="1" TrackNumber="6" Year="2025" AverageBpm="176.00" DateAdded="2026-04-18" BitRate="320" SampleRate="44100" Comments=" /* FRAPCORE / MELODIC HARDCORE / EXPERIMENTAL HARDCORE / BEAT GRID CHECKED / CUE POINTS CHECKED / UN PEU VNR / 170-180 */" PlayCount="13" Rating="255" Location="file://localhost/D:/DJ/Von%20Bikr%c3%a4v%20-%20Les%20Meilleurs%20-%2001-06%20Bient%c3%b4t.mp3" Remixer="" Tonality="5B" Label="" Mix="">
+      <TEMPO Inizio="0.153" Bpm="176.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="54.708" Num="0" Red="0" Green="224" Blue="255" />
+    </TRACK>
+    <TRACK TrackID="195918841" Name="railgun lobotomy" Artist="Purity Filter" Composer="" Album="railgun lobotomy" Grouping="" Genre="" Kind="Fichier MP3" Size="6824267" TotalTime="210" DiscNumber="1" TrackNumber="1" Year="2024" AverageBpm="160.00" DateAdded="2026-04-18" BitRate="320" SampleRate="44100" Comments=" /* AMBIENT TECHNO  / TRANCE / HARDTRANCE / DANSANT / UN PEU VNR / 160-175 */" PlayCount="14" Rating="255" Location="file://localhost/D:/DJ/Purity%20Filter%20-%20railgun%20lobotomy%20-%2001-01%20railgun%20lobotomy.mp3" Remixer="" Tonality="1A" Label="" Mix="">
+      <TEMPO Inizio="0.026" Bpm="160.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="24.026" Num="0" Red="255" Green="55" Blue="111" />
+    </TRACK>
+    <TRACK TrackID="114701038" Name="Switch Technique &amp; Lucy Furr - Ostara (Original Mix)" Artist="" Composer="" Album="" Grouping="" Genre="" Kind="Fichier MP3" Size="13717464" TotalTime="342" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="175.00" DateAdded="2026-05-18" BitRate="320" SampleRate="44100" Comments=" /* NEW HARDCORE / EXPERIMENTAL HARDCORE / DRUM AND BASS / OPENER / BEAT GRID CHECKED / CUE POINTS CHECKED / CARREMENT VNR / 170-180 */" PlayCount="16" Rating="255" Location="file://localhost/D:/DJ/Switch%20Technique%20%26%20Lucy%20Furr%20-%20Ostara%20(Original%20Mix).mp3" Remixer="" Tonality="4A" Label="" Mix="">
+      <TEMPO Inizio="0.029" Bpm="175.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="0.029" Num="0" Red="0" Green="224" Blue="255" />
+    </TRACK>
+    <TRACK TrackID="68056539" Name="The Sickest Squad - Party Crasher - 01-01 Party Crasher" Artist="" Composer="" Album="" Grouping="" Genre="" Kind="Fichier MP3" Size="9602656" TotalTime="240" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="200.00" DateAdded="2026-05-18" BitRate="320" SampleRate="44100" Comments=" /* NEW HARDCORE / CARREMENT VNR / 195+ */" PlayCount="3" Rating="204" Location="file://localhost/D:/DJ/The%20Sickest%20Squad%20-%20Party%20Crasher%20-%2001-01%20Party%20Crasher.mp3" Remixer="" Tonality="4A" Label="" Mix="">
+      <TEMPO Inizio="0.024" Bpm="200.00" Metro="4/4" Battito="1" />
+      <TEMPO Inizio="37.225" Bpm="200.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="261205190" Name="RayRay - Go Insane (Extended Mix) - 01-01 Go Insane (Extended Mix)" Artist="" Composer="" Album="" Grouping="" Genre="" Kind="Fichier MP3" Size="7005040" TotalTime="175" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="170.00" DateAdded="2026-05-18" BitRate="320" SampleRate="44100" Comments=" /* UN PEU VNR / 160-175 */" PlayCount="1" Rating="153" Location="file://localhost/D:/DJ/RayRay%20-%20Go%20Insane%20(Extended%20Mix)%20-%2001-01%20Go%20Insane%20(Extended%20Mix).mp3" Remixer="" Tonality="1A" Label="" Mix="">
+      <TEMPO Inizio="0.025" Bpm="170.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="63684875" Name="Tard La Nuit" Artist="Evil Grimace; Sto" Composer="" Album="Après La Pluie" Grouping="" Genre="" Kind="Fichier MP3" Size="10364393" TotalTime="173" DiscNumber="1" TrackNumber="9" Year="2026" AverageBpm="180.00" DateAdded="2026-05-18" BitRate="320" SampleRate="44100" Comments=" /* FRAPCORE / EXPERIMENTAL HARDCORE / BEAT GRID CHECKED / CUE POINTS CHECKED / TROP DUR A MIXER / DANSANT / 170-180 / 180-190 */" PlayCount="3" Rating="153" Location="file://localhost/D:/DJ/Evil%20Grimace%20-%20Apr%c3%a8s%20La%20Pluie%20-%2001-09%20Tard%20La%20Nuit.mp3" Remixer="" Tonality="11A" Label="" Mix="">
+      <TEMPO Inizio="0.075" Bpm="180.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="42.742" Num="0" Red="222" Green="68" Blue="207" />
+    </TRACK>
+    <TRACK TrackID="61643345" Name="ANTARCTECH (HIDUP remix)" Artist="" Composer="" Album="" Grouping="" Genre="" Kind="Fichier MP3" Size="5360370" TotalTime="133" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="155.00" DateAdded="2026-08-06" BitRate="320" SampleRate="44100" Comments=" /* FRAPCORE / NEW HARDCORE / BEAT GRID CHECKED / CUE POINTS CHECKED / DANSANT / UN PEU VNR / CARREMENT VNR / 150-160 */" PlayCount="13" Rating="153" Location="file://localhost/D:/DJ/ANTARCTECH%20(HIDUP%20remix).mp3" Remixer="" Tonality="6A" Label="" Mix="">
+      <TEMPO Inizio="0.028" Bpm="155.00" Metro="4/4" Battito="3" />
+      <POSITION_MARK Name="" Type="0" Start="16.286" Num="0" Red="222" Green="68" Blue="207" />
+    </TRACK>
+    <TRACK TrackID="228493434" Name="Stup" Artist="" Composer="" Album="" Grouping="" Genre="" Kind="Fichier MP3" Size="11220463" TotalTime="280" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="178.00" DateAdded="2026-09-07" BitRate="320" SampleRate="44100" Comments="" PlayCount="3" Rating="0" Location="file://localhost/D:/DJ/Stup.mp3" Remixer="" Tonality="11A" Label="" Mix="">
+      <TEMPO Inizio="0.160" Bpm="178.00" Metro="4/4" Battito="1" />
+    </TRACK>
+  </COLLECTION>
+  <PLAYLISTS/>
+</DJ_PLAYLISTS>

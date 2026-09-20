@@ -17,7 +17,7 @@ def piste(id_: str, **extra) -> Track:
         "Tonality": "Am",
         "TotalTime": "200",
         "Location": f"file://localhost/{id_}.mp3",
-        "Comments": "/* Hardcore / vénère */",
+        "Comments": "/* Hardcore / CARREMENT VNR */",
         "Kind": "MP3 File",
     }
     attrs.update(extra)
@@ -30,7 +30,7 @@ def piste(id_: str, **extra) -> Track:
         duration_s=200,
         location=attrs["Location"],
         genres=("Hardcore",),
-        mood=4,
+        moods=(4,),
         raw_attrs=attrs,
     )
 
@@ -110,7 +110,7 @@ def test_raw_attrs_vide_utilise_le_repli_construit_depuis_track():
         duration_s=200,
         location="file://x.mp3",
         genres=("Hardcore",),
-        mood=4,
+        moods=(4,),
         raw_attrs={},
     )
     xml = build_playlist_xml([track], "S")

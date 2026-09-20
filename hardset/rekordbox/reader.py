@@ -1,14 +1,27 @@
 """Lecture d'un export XML de collection Rekordbox.
 
-Hypothèse non vérifiée : Rekordbox écrirait les My Tags dans l'attribut `Comments`
-du nœud TRACK, sous la forme `/* tag / tag */`, éventuellement entourée d'un
-commentaire libre. Aucun export Rekordbox réel n'a jamais été lu par ce projet :
-cette hypothèse n'a donc jamais été confrontée à un vrai fichier. `tools/
-inspect_collection.py` est la sonde prévue pour trancher la question dès qu'un
-export réel sera disponible ; si l'export réel la contredit, c'est ici — le motif et
-le séparateur ci-dessous — qu'il faut regarder en premier. Le XML ne transporte pas
-la catégorie du tag : la distinction genre / mood se fait donc par la configuration
-— tout tag reconnu comme mood est le mood, **tout autre tag est un genre**.
+Rekordbox écrit les My Tags dans l'attribut `Comments` du nœud TRACK, sous la
+forme `/* tag / tag */`, éventuellement entourée d'un commentaire libre. Ce
+format a été **observé** sur un export réel (rekordbox 7.2.18, 706 morceaux, le
+2026-09-20), dont `tests/fixtures/collection_reelle.xml` est un extrait
+verbatim. Il n'apparaît toutefois que si le réglage Rekordbox qui recopie les My
+Tags dans les commentaires est actif : sans lui, `Comments` ne porte que du texte
+libre et la collection paraît entièrement non taguée. `tools/
+inspect_collection.py` reste la sonde pour le constater sur un export donné.
+
+Le XML ne transporte pas la **catégorie** d'un tag. Le lecteur la déduit donc par
+élimination, dans cet ordre :
+
+1. un tag reconnu par `Config.mood_value` est un niveau de mood ;
+2. un tag déclaré dans `tags_ignores` (état de préparation, jouabilité) est
+   écarté ;
+3. un tag qui a la forme d'une plage de BPM (`140-150`, `195+`) est écarté
+   aussi : `AverageBpm` porte déjà l'information, exactement ;
+4. **tout le reste est un genre.**
+
+L'ordre compte, et le sens de la règle 4 aussi : un genre ajouté dans Rekordbox
+apparaît sans qu'on touche à la configuration, qui n'a à nommer que les
+catégories fermées.
 """
 
 from __future__ import annotations
@@ -22,11 +35,15 @@ from hardset.config import Config
 from hardset.engine.harmony import to_camelot
 from hardset.model import SetWarning, Track, WarningCode, normalize_tag
 
-# Bloc de My Tags dans `Comments` : encode l'hypothèse non vérifiée décrite dans la
-# docstring du module. Si un export réel la contredit, c'est cette expression et le
-# séparateur qui changent en premier.
+# Bloc de My Tags dans `Comments`, au format décrit dans la docstring du module.
 _TAGS_RE = re.compile(r"/\*(.*?)\*/", re.DOTALL)
 _TAG_SEPARATOR = "/"
+
+# Tags de plage de BPM (`110-120`, `195+`). Reconnus à la forme et non par une
+# liste : ils forment une famille ouverte, et une plage ajoutée dans Rekordbox
+# ne doit pas se mettre à peupler la liste des genres. Le tag n'est pas lu comme
+# un intervalle — il est seulement écarté ; `AverageBpm` est plus précis.
+_PLAGE_BPM_RE = re.compile(r"^\d{2,3}\s*(?:-\s*\d{2,3}|\+)$")
 
 
 class CollectionError(Exception):
@@ -86,8 +103,8 @@ class Collection:
         """Plage de BPM des morceaux à BPM renseigné, pour préremplir le formulaire.
 
         Tous les morceaux dont le BPM est supérieur à zéro comptent, y compris
-        ceux qui seront exclus de la sélection faute de mood unique : le
-        formulaire propose une plage, il ne présume pas de la demande.
+        ceux qui seront exclus de la sélection faute de mood : le formulaire
+        propose une plage, il ne présume pas de la demande.
         """
         bpms = [t.bpm for t in self.tracks if t.bpm > 0]
         return (min(bpms), max(bpms)) if bpms else (0.0, 0.0)
@@ -110,13 +127,18 @@ def _enfants(noeud: ElementTree.Element) -> tuple[str, ...]:
 
 
 def read_collection(path: Path, config: Config) -> Collection:
-    """Lit l'export XML et classe les tags de chaque morceau en genres et mood.
+    """Lit l'export XML et classe les tags de chaque morceau (voir la docstring du module).
 
-    Un morceau sans mood, ou portant plusieurs moods, est **conservé** dans la
-    collection avec `mood = None` : il sera exclu de la sélection, et signalé ici.
-    Un morceau sans TrackID, en revanche, ne peut pas être référencé dans une
-    playlist : il est retiré de la collection elle-même (pas seulement de la
-    sélection), et signalé ici aussi.
+    Un morceau portant plusieurs moods est jouable : son énergie est leur
+    moyenne (`Track.mood`), et il reste filtrable sur chacun d'eux
+    (`Track.moods`). Il est tout de même signalé — l'information est utile pour
+    repérer un tag posé par erreur.
+
+    Un morceau sans aucun mood est **conservé** dans la collection, mais sera
+    exclu de la sélection faute de savoir où le placer sur la courbe ; il est
+    signalé. Un morceau sans TrackID, en revanche, ne peut pas être référencé
+    dans une playlist : il est retiré de la collection elle-même (pas seulement
+    de la sélection), et signalé aussi.
     """
     chemin = Path(path).expanduser()
     try:
@@ -149,19 +171,24 @@ def read_collection(path: Path, config: Config) -> Collection:
             continue
 
         genres: list[str] = []
-        moods: list[int] = []
+        niveaux: set[int] = set()
         for tag in parse_my_tags(attrs.get("Comments")):
             valeur = config.mood_value(tag)
-            if valeur is None:
-                genres.append(tag)
+            if valeur is not None:
+                niveaux.add(valeur)
+            elif config.tag_ignore(tag) or _PLAGE_BPM_RE.match(tag):
+                continue
             else:
-                moods.append(valeur)
+                genres.append(tag)
 
-        if len(moods) == 1:
-            mood = moods[0]
-        else:
-            mood = None
-            (moods_multiples if moods else sans_mood).append(identifiant)
+        # Trié pour que deux lectures du même morceau donnent le même tuple, et
+        # dédoublonné pour qu'un tag répété (« DANSANT / dansant ») ne passe pas
+        # pour deux moods.
+        moods = tuple(sorted(niveaux))
+        if not moods:
+            sans_mood.append(identifiant)
+        elif len(moods) > 1:
+            moods_multiples.append(identifiant)
 
         camelot = to_camelot(attrs.get("Tonality"))
         if camelot is None:
@@ -177,7 +204,7 @@ def read_collection(path: Path, config: Config) -> Collection:
                 duration_s=_int(attrs.get("TotalTime")),
                 location=attrs.get("Location", ""),
                 genres=tuple(genres),
-                mood=mood,
+                moods=moods,
                 raw_attrs=attrs,
                 raw_children=_enfants(noeud),
             )
@@ -193,7 +220,7 @@ def read_collection(path: Path, config: Config) -> Collection:
         (
             WarningCode.MULTIPLE_MOODS,
             moods_multiples,
-            "{n} morceaux portent plusieurs moods et sont exclus de la sélection (mais restent dans la collection)",
+            "{n} morceaux portent plusieurs moods : leur énergie est la moyenne de ces moods",
         ),
         (
             WarningCode.NO_MOOD,

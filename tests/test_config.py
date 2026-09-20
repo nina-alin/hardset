@@ -18,7 +18,7 @@ def _ecrit(tmp_path, nom, contenu):
 
 def test_charge_la_config_livree():
     config = load_config()
-    assert config.moods[0] == "calme"
+    assert config.moods[0] == "CALME"
     assert len(config.moods) == 5
     assert set(config.profils) == {"montee", "warmup-long", "plateau", "vagues"}
     assert config.poids.mood == 1.5
@@ -39,11 +39,11 @@ def test_profil_vagues_porte_ses_parametres():
 @pytest.mark.parametrize(
     "tag, attendu",
     [
-        ("calme", 1),
+        ("CALME", 1),
         ("Dansant", 2),
-        ("un peu vénère", 3),
-        ("VÉNÈRE", 4),
-        ("c'est du bruit", 5),
+        ("un peu vnr", 3),
+        ("Carrement VNR", 4),
+        ("C DU BRUIT", 5),
         ("hardcore", None),
         ("", None),
     ],
@@ -836,3 +836,64 @@ def test_un_chemin_explicite_reste_prioritaire(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError, match="introuvable"):
         load_config(tmp_path / "absent.yaml")
+
+
+# --- Tags ignorés ---------------------------------------------------------
+#
+# Les My Tags qui ne relèvent ni du genre ni du mood (état de préparation,
+# jouabilité) sont déclarés ici pour que le lecteur ne les prenne pas pour des
+# genres. Voir `hardset/rekordbox/reader.py`.
+
+def ecrire_config(tmp_path, corps: str):
+    chemin = tmp_path / "hardset.yaml"
+    chemin.write_text(
+        "moods: [calme, vénère]\n"
+        "profils:\n"
+        "  simple:\n"
+        "    bpm: {type: lineaire}\n"
+        "    mood: {type: lineaire}\n" + corps,
+        encoding="utf-8",
+    )
+    return chemin
+
+
+def test_tags_ignores_absents_valent_aucun(tmp_path):
+    config = load_config(ecrire_config(tmp_path, ""))
+    assert config.tags_ignores == ()
+    assert not config.tag_ignore("BEAT GRID CHECKED")
+
+
+def test_tags_ignores_charges(tmp_path):
+    config = load_config(
+        ecrire_config(tmp_path, "tags_ignores:\n  - BEAT GRID CHECKED\n  - OPENER\n")
+    )
+    assert config.tags_ignores == ("BEAT GRID CHECKED", "OPENER")
+    assert config.tag_ignore("BEAT GRID CHECKED")
+    assert config.tag_ignore("  beat grid checked ")   # comparé après normalisation
+    assert not config.tag_ignore("GABBER")
+
+
+def test_tags_ignores_nul_vaut_aucun(tmp_path):
+    assert load_config(ecrire_config(tmp_path, "tags_ignores:\n")).tags_ignores == ()
+
+
+def test_tags_ignores_doit_etre_une_liste(tmp_path):
+    with pytest.raises(ConfigError, match="tags_ignores"):
+        load_config(ecrire_config(tmp_path, "tags_ignores: OPENER\n"))
+
+
+def test_tags_ignores_elements_chaines(tmp_path):
+    with pytest.raises(ConfigError, match="tags_ignores"):
+        load_config(ecrire_config(tmp_path, "tags_ignores: [12]\n"))
+
+
+def test_un_mood_ne_peut_pas_etre_ignore(tmp_path):
+    """Déclarer un mood parmi les tags ignorés le rendrait introuvable."""
+    with pytest.raises(ConfigError, match="tags_ignores"):
+        load_config(ecrire_config(tmp_path, "tags_ignores: [Vénère]\n"))
+
+
+def test_config_livree_declare_les_tags_detat():
+    config = load_config()
+    assert config.tag_ignore("BEAT GRID CHECKED")
+    assert config.tag_ignore("TROP DUR A MIXER")

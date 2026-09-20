@@ -92,7 +92,9 @@ _CHAMPS_POIDS = frozenset(champ.name for champ in fields(Weights))
 # liste blanche fermée, sur le modèle de `_CHAMPS_POIDS` : `hardset.yaml`
 # est édité à la main, et une faute de frappe (`seconds_per_tracks`,
 # `labell`) ne doit jamais se charger en silence.
-_CHAMPS_RACINE = frozenset({"moods", "profils", "poids", "seconds_per_track", "collection_xml"})
+_CHAMPS_RACINE = frozenset(
+    {"moods", "tags_ignores", "profils", "poids", "seconds_per_track", "collection_xml"}
+)
 _CHAMPS_PROFIL = frozenset({"label", "bpm", "mood"})
 
 
@@ -103,6 +105,7 @@ class Config:
     poids: Weights = Weights()
     collection_xml: str | None = None
     seconds_per_track: int = 120
+    tags_ignores: tuple[str, ...] = ()
 
     @property
     def mood_max(self) -> int:
@@ -124,6 +127,18 @@ class Config:
             if normalize_tag(mood) == cible:
                 return index
         return None
+
+    def tag_ignore(self, tag: str) -> bool:
+        """Vrai si ce My Tag ne doit compter ni comme genre ni comme mood.
+
+        Ce sont les tags d'état de préparation et de jouabilité (`BEAT GRID
+        CHECKED`, `TROP DUR A MIXER`…) : le XML ne transportant pas la
+        catégorie d'un tag, ils doivent être nommés ici, sans quoi le lecteur
+        les prendrait pour des genres. La comparaison passe par
+        `normalize_tag`, comme `mood_value`.
+        """
+        cible = normalize_tag(tag)
+        return bool(cible) and cible in {normalize_tag(t) for t in self.tags_ignores}
 
 
 def _nombre(valeur: Any, chemin: str) -> float:
@@ -259,6 +274,28 @@ def load_config(path: Path | None = None) -> Config:
             raise ConfigError(f"moods : doublon détecté pour {mood!r}")
         vus.add(normalise)
 
+    # Même remarque que pour `moods` : `None` traité comme absent, et
+    # `.get(cle, defaut)` plutôt que `or defaut`.
+    ignores_raw = raw.get("tags_ignores", ())
+    if ignores_raw is None:
+        ignores_raw = ()
+    if isinstance(ignores_raw, str) or not isinstance(ignores_raw, (list, tuple)):
+        raise ConfigError("tags_ignores doit être une liste de chaînes, pas une valeur unique")
+    for element in ignores_raw:
+        if not isinstance(element, str):
+            raise ConfigError(
+                f"tags_ignores : chaque élément doit être une chaîne, reçu {element!r}"
+            )
+    tags_ignores = tuple(ignores_raw)
+    # Un mood déclaré ignoré serait introuvable : le lecteur teste `mood_value`
+    # avant `tag_ignore`, donc le tag resterait bien un mood — mais la
+    # configuration exprimerait alors deux intentions contradictoires, et c'est
+    # cette contradiction qu'on refuse plutôt que d'en choisir une en silence.
+    moods_normalises = {normalize_tag(m) for m in moods}
+    for tag in tags_ignores:
+        if normalize_tag(tag) in moods_normalises:
+            raise ConfigError(f"tags_ignores : {tag!r} est déjà déclaré comme mood")
+
     # Même remarque que pour `moods` : `.get(cle, defaut)`, pas `or defaut`,
     # et `None` traité comme absent pour la même raison.
     profils_raw = raw.get("profils", {})
@@ -338,4 +375,5 @@ def load_config(path: Path | None = None) -> Config:
         poids=poids,
         collection_xml=collection if collection else None,
         seconds_per_track=seconds_per_track,
+        tags_ignores=tags_ignores,
     )

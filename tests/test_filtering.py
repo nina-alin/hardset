@@ -14,7 +14,7 @@ def piste(**kwargs) -> Track:
         duration_s=200,
         location="file://x",
         genres=("Hardcore",),
-        mood=4,
+        moods=(4,),
     )
     base.update(kwargs)
     return Track(**base)
@@ -36,15 +36,33 @@ def requete(**kwargs) -> SetRequest:
 # --- Mood ----------------------------------------------------------------
 
 def test_mood_absent_exclu():
-    assert eligible([piste(mood=None)], requete()) == []
+    assert eligible([piste(moods=())], requete()) == []
 
 
 def test_mood_hors_demande_exclu():
-    assert eligible([piste(mood=1)], requete(moods=frozenset({4, 5}))) == []
+    assert eligible([piste(moods=(1,))], requete(moods=frozenset({4, 5}))) == []
 
 
 def test_mood_demande_retenu():
-    assert len(eligible([piste(mood=4)], requete(moods=frozenset({4, 5})))) == 1
+    assert len(eligible([piste(moods=(4,))], requete(moods=frozenset({4, 5})))) == 1
+
+
+def test_mood_double_retenu_si_lun_des_deux_est_demande():
+    """Un morceau à deux moods appartient aux deux niveaux, pas à leur moyenne.
+
+    Sa moyenne (2,5 ici) ne désigne aucun niveau de l'échelle : filtrer sur
+    elle écarterait le morceau des deux demandes où il a sa place.
+    """
+    assert len(eligible([piste(moods=(2, 3))], requete(moods=frozenset({2})))) == 1
+    assert len(eligible([piste(moods=(2, 3))], requete(moods=frozenset({3})))) == 1
+
+
+def test_mood_double_exclu_si_aucun_des_deux_nest_demande():
+    assert eligible([piste(moods=(2, 3))], requete(moods=frozenset({5}))) == []
+
+
+def test_mood_double_retenu_quand_aucun_mood_nest_demande():
+    assert len(eligible([piste(moods=(2, 3))], requete())) == 1
 
 
 # --- Genre ---------------------------------------------------------------

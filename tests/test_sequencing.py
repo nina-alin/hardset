@@ -34,7 +34,7 @@ def piste(id_: str, bpm: float, mood: int, camelot: str | None = "8A", genres=("
         duration_s=200,
         location=f"file://localhost/{id_}.mp3",
         genres=genres,
-        mood=mood,
+        moods=() if mood is None else (mood,),
     )
 
 
@@ -117,7 +117,7 @@ def test_cout_exige_un_mood_sans_repli_sur_la_cible():
     cible = Target(position=0, bpm=180.0, mood=4.0)
     candidat = Track(
         id="x", artist="A", title="T", bpm=180.0, camelot=None,
-        duration_s=200, location="file://localhost/x.mp3", genres=(), mood=None,
+        duration_s=200, location="file://localhost/x.mp3", genres=(), moods=(),
     )
     with pytest.raises(TypeError):
         cost(candidat, cible, None, POIDS)

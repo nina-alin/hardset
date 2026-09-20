@@ -48,9 +48,29 @@ class Track:
     duration_s: int
     location: str
     genres: tuple[str, ...] = ()
-    mood: int | None = None
+    moods: tuple[int, ...] = ()
     raw_attrs: dict[str, str] = field(default_factory=dict, compare=False)
     raw_children: tuple[str, ...] = field(default=(), compare=False)
+
+    @property
+    def mood(self) -> float | None:
+        """Énergie du morceau : la moyenne de ses niveaux de mood.
+
+        `None` quand le morceau n'en porte aucun — il est alors exclu de toute
+        sélection, faute de savoir où le placer sur la courbe.
+
+        La moyenne n'est pas arrondie : un morceau tagué à la fois DANSANT et
+        UN PEU VNR vaut 2,5, et se place naturellement entre les deux paliers.
+        C'est la même échelle continue que celle des cibles (`Target.mood`),
+        qui ne sont pas arrondies non plus.
+
+        `moods` reste la vérité pour le **filtrage** : un tel morceau appartient
+        au niveau 2 comme au niveau 3, pas au niveau 2,5 qui ne désigne aucun
+        libellé. Voir `hardset/engine/filtering.py`.
+        """
+        if not self.moods:
+            return None
+        return sum(self.moods) / len(self.moods)
 
     @property
     def label(self) -> str:

@@ -1,12 +1,14 @@
 """Sonde de diagnostic d'un export XML Rekordbox.
 
-Ne fait partie ni du paquet ni des tests. Le lecteur est écrit, et il repose sur
-une hypothèse de format jamais confrontée à un vrai export (My Tags dans
-`Comments`, sous la forme `/* tag / tag */` : voir la docstring de
-`hardset/rekordbox/reader.py`). Cette sonde sert à confronter cette hypothèse à
-un export réel dès qu'on en aura un : son expression d'extraction est
-volontairement la même que celle du lecteur, pour que ce qu'elle voit soit ce
-que le lecteur verra.
+Ne fait partie ni du paquet ni des tests. Le format des My Tags (dans `Comments`,
+sous la forme `/* tag / tag */` : voir la docstring de
+`hardset/rekordbox/reader.py`) a été observé sur un export réel. Cette sonde
+reste utile pour diagnostiquer un export donné : elle dit tout de suite si les
+My Tags y sont présents — ils n'y figurent que si le réglage Rekordbox qui les
+recopie dans les commentaires est actif — et quel vocabulaire de tags il porte,
+ce qui est ce qu'il faut savoir pour régler `moods` et `tags_ignores` dans
+`hardset.yaml`. Son expression d'extraction est volontairement la même que celle
+du lecteur, pour que ce qu'elle voit soit ce que le lecteur verra.
 
 Usage : python3 tools/inspect_collection.py ~/rekordbox.xml
 """

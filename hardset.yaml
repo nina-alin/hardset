@@ -8,13 +8,32 @@ collection_xml: ~/rekordbox.xml
 # durée demandée du set en nombre de morceaux.
 seconds_per_track: 120
 
-# L'ordre définit l'échelle ordinale 1 → 5.
+# L'ordre définit l'échelle ordinale 1 → 5. Ce sont les My Tags de mood tels
+# qu'ils sont écrits dans Rekordbox ; la comparaison ignore la casse et les
+# accents, mais l'orthographe doit rester la leur (« VNR », pas « vénère »).
 moods:
-  - calme
-  - dansant
-  - un peu vénère
-  - vénère
-  - c'est du bruit
+  - CALME
+  - DANSANT
+  - UN PEU VNR
+  - CARREMENT VNR
+  - C DU BRUIT
+
+# My Tags qui ne sont ni un genre ni un mood : état de préparation du morceau
+# et jouabilité. Le XML ne dit pas à quelle catégorie appartient un tag, et la
+# règle du lecteur est « tout ce qui n'est ni mood, ni ignoré, ni une plage de
+# BPM est un genre » — sans cette liste, `BEAT GRID CHECKED` deviendrait un
+# genre. Les plages de BPM (`140-150`, `195+`) sont reconnues à leur forme et
+# n'ont pas à figurer ici.
+tags_ignores:
+  - BEAT GRID CHECKED
+  - BEAT GRID TO CORRECT
+  - CUE POINTS CHECKED
+  - CUE POINTS TO CORRECT
+  - FACILE
+  - PAS FACILE
+  - OK TIER
+  - TROP DUR A MIXER
+  - OPENER
 
 poids:
   bpm: 1.0

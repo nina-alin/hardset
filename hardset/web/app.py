@@ -131,7 +131,11 @@ def _track_payload(track: Track) -> dict:
         "title": track.title,
         "bpm": track.bpm,
         "camelot": track.camelot,
+        # `mood` est la moyenne (elle peut valoir 2,5), `moods` les niveaux
+        # effectivement tagués : la page a besoin des deux, l'une pour situer
+        # le morceau sur la courbe, les autres pour l'étiqueter.
         "mood": track.mood,
+        "moods": list(track.moods),
         "genres": list(track.genres),
     }
 

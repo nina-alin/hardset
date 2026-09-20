@@ -121,3 +121,18 @@ def test_mood_vagues_reste_dans_les_bornes():
     moods = [c.mood for c in cibles]
     # Toutes les moods doivent rester dans les bornes demandées
     assert all(1.0 <= m <= 5.0 for m in moods), f"Mood hors bornes : min={min(moods)}, max={max(moods)}"
+
+
+# --- Échelle de mood configurée -------------------------------------------
+
+def test_sans_mood_demande_la_courbe_balaie_lechelle_configuree():
+    # Une configuration peut déclarer moins de cinq moods : la courbe ne doit
+    # pas viser un niveau qui n'existe pas dans cette configuration-là.
+    cibles = build_targets(requete(), profil(CurveSpec("lineaire", {})), 5, mood_max=3)
+    assert cibles[0].mood == pytest.approx(float(MOOD_MIN))
+    assert cibles[-1].mood == pytest.approx(3.0)
+
+
+def test_echelle_complete_par_defaut():
+    cibles = build_targets(requete(), profil(CurveSpec("lineaire", {})), 5)
+    assert cibles[-1].mood == pytest.approx(float(MOOD_MAX))

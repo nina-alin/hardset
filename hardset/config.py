@@ -84,6 +84,17 @@ class Config:
     collection_xml: str | None = None
     seconds_per_track: int = 120
 
+    @property
+    def mood_max(self) -> int:
+        """Plus haut niveau de l'échelle configurée.
+
+        L'échelle est ordinale et 1-based : `moods` peut être plus courte que
+        `MOOD_MAX`, qui n'en borne que l'étendue maximale. C'est cette
+        longueur-là, et pas la constante, qui dit jusqu'où une demande et une
+        courbe de mood ont le droit d'aller.
+        """
+        return len(self.moods)
+
     def mood_value(self, tag: str) -> int | None:
         """Position 1-based du tag dans l'échelle, ou `None` si ce n'est pas un mood."""
         cible = normalize_tag(tag)

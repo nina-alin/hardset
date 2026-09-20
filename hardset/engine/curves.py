@@ -40,10 +40,20 @@ def curve_fn(spec: CurveSpec) -> Callable[[float], float]:
     raise CurveError(f"type de courbe '{spec.type}' inconnu")
 
 
-def build_targets(request: SetRequest, profile: Profile, count: int) -> list[Target]:
+def build_targets(
+    request: SetRequest,
+    profile: Profile,
+    count: int,
+    mood_max: int = MOOD_MAX,
+) -> list[Target]:
     """Cible (BPM, mood) de chaque position du set.
 
     `mood` reste un flottant : un set peut viser « entre dansant et un peu vénère ».
+
+    `mood_max` est le haut de l'échelle réellement configurée (`Config.mood_max`),
+    que les appelants passent quand ils en disposent. Sans mood demandé, la
+    courbe balaie toute l'échelle : viser `MOOD_MAX` alors que la configuration
+    n'en déclare que trois reviendrait à viser un niveau qui n'existe pas.
     """
     if count <= 0:
         return []
@@ -53,7 +63,7 @@ def build_targets(request: SetRequest, profile: Profile, count: int) -> list[Tar
 
     # Sans mood demandé, la courbe balaie toute l'échelle.
     mood_min = min(request.moods) if request.moods else MOOD_MIN
-    mood_max = max(request.moods) if request.moods else MOOD_MAX
+    mood_haut = max(request.moods) if request.moods else mood_max
 
     cibles: list[Target] = []
     for i in range(count):
@@ -62,7 +72,7 @@ def build_targets(request: SetRequest, profile: Profile, count: int) -> list[Tar
             Target(
                 position=i,
                 bpm=request.bpm_min + p_bpm(t) * (request.bpm_max - request.bpm_min),
-                mood=mood_min + p_mood(t) * (mood_max - mood_min),
+                mood=mood_min + p_mood(t) * (mood_haut - mood_min),
             )
         )
     return cibles

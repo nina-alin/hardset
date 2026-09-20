@@ -136,7 +136,7 @@ def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> Ge
 
     avertissements = _penurie(len(pool), vise)
 
-    targets = build_targets(request, profile, count)
+    targets = build_targets(request, profile, count, config.mood_max)
     rng = random.Random(request.seed)
 
     retenus: list[Track] = []

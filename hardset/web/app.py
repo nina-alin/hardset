@@ -24,7 +24,7 @@ from hardset.engine.sequencing import (
     replace_at,
     shortage_warnings,
 )
-from hardset.model import MOOD_MAX, MOOD_MIN, GeneratedSet, SetRequest, Track
+from hardset.model import MOOD_MIN, GeneratedSet, SetRequest, Track
 from hardset.rekordbox.reader import Collection, CollectionError, read_collection
 from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name, slug
 
@@ -47,19 +47,23 @@ class SetRequestPayload(CollectionPayload):
     # `config.seconds_per_track` (point tranché de la tâche 10).
     seconds_per_track: int = 120
 
-    def to_request(self) -> SetRequest:
+    def to_request(self, config: Config) -> SetRequest:
         """Traduit le payload en `SetRequest`, après validation.
 
         Le moteur ne valide pas ces règles — ce n'est pas son travail — mais une
         requête hors de l'échelle de mood, à plage de BPM inversée, ou à durée ou
         `seconds_per_track` nul ou négatif ne doit jamais l'atteindre : elle
         produirait un set vide indistinguable d'une vraie pénurie.
+
+        L'échelle de mood est celle de la configuration reçue, pas la constante
+        `MOOD_MAX` qui n'en borne que l'étendue maximale : avec trois moods
+        configurés, `mood=5` ne désigne rien.
         """
         for mood in self.moods:
-            if not MOOD_MIN <= mood <= MOOD_MAX:
+            if not MOOD_MIN <= mood <= config.mood_max:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"mood {mood} hors de l'échelle [{MOOD_MIN}, {MOOD_MAX}]",
+                    detail=f"mood {mood} hors de l'échelle [{MOOD_MIN}, {config.mood_max}]",
                 )
         if self.bpm_min > self.bpm_max:
             raise HTTPException(
@@ -257,7 +261,7 @@ def create_app(config: Config) -> FastAPI:
     @app.post("/api/generate")
     def generer(payload: SetRequestPayload) -> dict:
         lue = charger(payload.path)
-        requete = payload.to_request()
+        requete = payload.to_request(config)
         try:
             resultat = generate(lue.tracks, requete, config)
         except SequencingError as exc:
@@ -267,7 +271,7 @@ def create_app(config: Config) -> FastAPI:
     @app.post("/api/replace")
     def remplacer(payload: ReplacePayload) -> dict:
         lue = charger(payload.path)
-        requete = payload.to_request()
+        requete = payload.to_request(config)
         tracks = resoudre(lue, payload.track_ids)
         profil = profil_demande(requete)
 
@@ -281,7 +285,7 @@ def create_app(config: Config) -> FastAPI:
         # collection, donc `shortage_warnings` la redonne à l'identique.
         courant = GeneratedSet(
             tracks=tracks,
-            targets=build_targets(requete, profil, len(tracks)),
+            targets=build_targets(requete, profil, len(tracks), config.mood_max),
             warnings=shortage_warnings(lue.tracks, requete),
         )
         try:
@@ -299,7 +303,7 @@ def create_app(config: Config) -> FastAPI:
         la logique musicale — elle n'a donc qu'un propriétaire, le serveur, et
         c'est la même que celle qu'imposera le prochain remplacement.
         """
-        requete = payload.to_request()
+        requete = payload.to_request(config)
         profil = profil_demande(requete)
         if payload.count < 0:
             raise HTTPException(
@@ -308,7 +312,7 @@ def create_app(config: Config) -> FastAPI:
         return {
             "targets": [
                 {"position": c.position, "bpm": c.bpm, "mood": c.mood}
-                for c in build_targets(requete, profil, payload.count)
+                for c in build_targets(requete, profil, payload.count, config.mood_max)
             ]
         }
 

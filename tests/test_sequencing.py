@@ -435,3 +435,11 @@ def test_shortage_warnings_donne_le_meme_avertissement_que_generate():
     depuis_generate = [w for w in generate(pool, demande, CONFIG).warnings
                        if w.code == WarningCode.SHORTAGE]
     assert shortage_warnings(pool, demande) == depuis_generate
+
+
+# --- Échelle de mood tirée de la configuration ----------------------------
+
+def test_les_cibles_de_mood_suivent_lechelle_de_la_configuration():
+    config_courte = replace(CONFIG, moods=("calme", "dansant", "vénère"))
+    resultat = generate(collection_dense(), requete(duration_min=20), config_courte)
+    assert max(c.mood for c in resultat.targets) <= 3.0

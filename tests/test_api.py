@@ -480,3 +480,45 @@ def test_cibles_profil_inconnu_message_identique_a_la_generation(client, collect
     )
     assert reponse_cibles.status_code == 400
     assert reponse_cibles.json()["detail"] == reponse_generation.json()["detail"]
+
+
+# --- Échelle de mood bornée sur la configuration --------------------------
+# `load_config` accepte une échelle plus courte que la constante `MOOD_MAX` :
+# avec trois moods configurés, `mood=5` n'existe pas. L'accepter rendait un set
+# vide indistinguable d'une pénurie — exactement ce que la validation ajoutée
+# en tâche 10 voulait empêcher.
+
+CONFIG_TROIS_MOODS = replace(CONFIG, moods=("calme", "dansant", "vénère"))
+
+
+@pytest.fixture
+def client_trois_moods() -> TestClient:
+    return TestClient(create_app(CONFIG_TROIS_MOODS))
+
+
+def test_mood_hors_de_lechelle_configuree_renvoie_400(client_trois_moods, collection_xml):
+    reponse = client_trois_moods.post("/api/generate", json=corps(collection_xml, moods=[5]))
+    assert reponse.status_code == 400
+    assert "mood" in reponse.json()["detail"]
+    assert "3" in reponse.json()["detail"]
+
+
+def test_dernier_mood_de_lechelle_configuree_accepte(client_trois_moods, collection_xml):
+    reponse = client_trois_moods.post("/api/generate", json=corps(collection_xml, moods=[3]))
+    assert reponse.status_code == 200
+
+
+def test_cible_de_mood_ne_vise_pas_un_niveau_inexistant(client_trois_moods, collection_xml):
+    # Sans mood demandé, la courbe balaie toute l'échelle : celle qui est
+    # configurée, pas celle de la constante.
+    donnees = client_trois_moods.post("/api/generate", json=corps(collection_xml)).json()
+    assert max(c["mood"] for c in donnees["targets"]) <= 3.0
+
+
+def test_cibles_de_mood_bornees_aussi_sur_la_route_des_cibles(
+    client_trois_moods, collection_xml
+):
+    donnees = client_trois_moods.post(
+        "/api/targets", json=corps(collection_xml, count=6)
+    ).json()
+    assert max(c["mood"] for c in donnees["targets"]) <= 3.0

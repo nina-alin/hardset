@@ -115,6 +115,9 @@ class SetRequest:
 
     `seed` n'est pas exposée dans l'interface : elle ne sert qu'à rendre la
     génération reproductible dans les tests.
+
+    `start_track_id` et `end_track_id` sont les morceaux choisis pour ouvrir et
+    fermer le set. `engine/pinning.resolve` les résout contre une collection.
     """
 
     genres: frozenset[str]
@@ -124,6 +127,11 @@ class SetRequest:
     profile: str
     duration_min: int
     seconds_per_track: int = 120
+    # Morceaux imposés aux extrémités du set, par leur `Track.id`. Facultatifs et
+    # indépendants. Ils déplacent les bornes de BPM (`engine/pinning.resolve`) :
+    # la demande porte l'intention, pas encore la conséquence.
+    start_track_id: str | None = None
+    end_track_id: str | None = None
     seed: int | None = None
 
     @property

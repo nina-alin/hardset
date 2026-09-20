@@ -54,8 +54,8 @@ Hors périmètre, décidé explicitement :
 
 ## 4. Architecture
 
-Un module ajouté, trois modifiés. La séparation des couches est inchangée, et
-`hardset/engine/` reste du Python pur — `test_architecture.py` continue de le
+Deux modules ajoutés, trois modifiés. La séparation des couches est inchangée,
+et `hardset/engine/` reste du Python pur — `test_architecture.py` continue de le
 garder.
 
 ### 4.1 `hardset/engine/pinning.py` (nouveau)
@@ -151,7 +151,23 @@ soient celles de la demande accordée. Il n'a pas à protéger les positions
 épinglées : les morceaux en place sont déjà exclus du vivier de remplacement par
 `deja_places`.
 
-### 4.4 `hardset/web/app.py`
+### 4.4 `hardset/engine/search.py` (nouveau)
+
+```python
+def search(tracks: Iterable[Track], q: str, limit: int) -> tuple[list[Track], bool]:
+    """Morceaux dont « artiste titre » contient tous les mots de `q`."""
+```
+
+La recherche vit dans le moteur et non dans la route qui l'expose, pour la même
+raison que le reste : `hardset/web/` traduit des requêtes HTTP, il ne décide de
+rien. Le module ne connaît aucun critère de set — c'est ce qui fait qu'un
+morceau sans mood reste trouvable, donc épinglable (§ 3).
+
+Rend au plus `limit` morceaux, dans l'ordre de la collection, et un drapeau
+disant qu'il y en avait davantage. Une requête vide ne rend rien : la page
+invite à taper plutôt que de dérouler la collection entière.
+
+### 4.5 `hardset/web/app.py`
 
 **Route ajoutée — `POST /api/tracks`**
 
@@ -231,6 +247,7 @@ affiché : ils ne lui appartiennent plus.
 | Fichier | Ce qu'il couvre |
 |---|---|
 | `tests/test_pinning.py` (nouveau) | `resolve` : dérivation des deux bornes, chacune séparément, idempotence, et les trois `PinningError` |
+| `tests/test_search.py` (nouveau) | `search` : mots dans n'importe quel ordre, insensibilité à la casse et aux accents, requête vide, plafond et drapeau `truncated`, absence de filtrage |
 | `tests/test_sequencing.py` | Placement en première et dernière position, exclusion du vivier, décompte de pénurie incluant les épinglés, les deux avertissements, set d'une seule position, vivier plus court que la durée demandée |
 | `tests/test_api.py` | `/api/tracks` (recherche multi-mots, `q` vide, plafond de `limit`, `truncated`, absence de filtrage) ; dérivation des BPM par `/api/generate`, `/api/replace` et `/api/targets` ; les `PinningError` traduites en 400 |
 | `tests/test_bout_en_bout.py` | Une génération épinglée des deux côtés sur la fixture riche, jusqu'au XML exporté |

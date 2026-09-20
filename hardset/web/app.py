@@ -129,11 +129,20 @@ def create_app(config: Config) -> FastAPI:
     cache: dict[tuple[str, float], Collection] = {}
 
     def charger(chemin_brut: str) -> Collection:
-        chemin = Path(chemin_brut).expanduser()
         try:
+            chemin = Path(chemin_brut).expanduser()
             cle = (str(chemin.resolve()), chemin.stat().st_mtime)
         except OSError as exc:
+            # `expanduser()` ne lève jamais d'`OSError` : à ce stade `chemin`
+            # est nécessairement défini, seule `resolve()`/`stat()` a échoué.
             raise HTTPException(status_code=400, detail=f"export introuvable : {chemin}") from exc
+        except (ValueError, RuntimeError) as exc:
+            # Un octet NUL dans le chemin fait lever un `ValueError` natif de
+            # `pathlib` (« embedded null byte »), et un `~utilisateur` inconnu
+            # fait lever un `RuntimeError` depuis `expanduser()` : ni l'un ni
+            # l'autre n'est un `OSError`, mais tous deux doivent produire un
+            # 400 explicite plutôt que de remonter bruts jusqu'à Starlette.
+            raise HTTPException(status_code=400, detail=f"chemin invalide : {exc}") from exc
         if cle not in cache:
             try:
                 cache.clear()   # une seule collection à la fois suffit
@@ -204,7 +213,15 @@ def create_app(config: Config) -> FastAPI:
         try:
             profil = config.profils[requete.profile]
         except KeyError as exc:
-            raise HTTPException(status_code=400, detail=f"profil '{requete.profile}' inexistant") from exc
+            # Même message que celui du moteur sur `/api/generate` (`_profile`
+            # dans `engine/sequencing.py`, interface privée et donc non
+            # réutilisable ici) : la liste des profils disponibles est ce qui
+            # aide réellement l'utilisatrice à corriger sa requête.
+            connus = ", ".join(sorted(config.profils))
+            raise HTTPException(
+                status_code=400,
+                detail=f"profil '{requete.profile}' inexistant (disponibles : {connus})",
+            ) from exc
 
         # Les cibles sont recalculées pour la longueur reçue : après une suppression,
         # la courbe se redistribue sur les positions restantes.

@@ -98,6 +98,30 @@ def test_collection_introuvable_renvoie_400(client, tmp_path):
     assert "introuvable" in reponse.json()["detail"]
 
 
+def test_collection_chemin_avec_octet_nul_renvoie_400(client):
+    # Un octet NUL dans le chemin fait lever un `ValueError` natif de `pathlib`
+    # (« embedded null byte »), pas un `OSError` : sans interception dédiée,
+    # il remontait en 500 brut jusqu'à Starlette.
+    reponse = client.post("/api/collection", json={"path": "foo\x00bar"})
+    assert reponse.status_code == 400
+
+
+def test_collection_repertoire_renvoie_400(client, tmp_path):
+    # Se tromper de champ dans le formulaire et pointer vers un dossier plutôt
+    # qu'un fichier est une erreur ordinaire : elle doit produire un 400 clair.
+    reponse = client.post("/api/collection", json={"path": str(tmp_path)})
+    assert reponse.status_code == 400
+
+
+def test_collection_xml_mal_forme_renvoie_400(client, tmp_path):
+    # Se tromper de fichier (un XML tronqué ou invalide) est tout aussi
+    # ordinaire ; le lecteur le convertit déjà en erreur exploitable.
+    chemin = tmp_path / "invalide.xml"
+    chemin.write_text("<DJ_PLAYLISTS><COLLECTION>", encoding="utf-8")
+    reponse = client.post("/api/collection", json={"path": str(chemin)})
+    assert reponse.status_code == 400
+
+
 # --- Génération ----------------------------------------------------------
 
 def test_generation(client, collection_xml):
@@ -201,6 +225,26 @@ def test_remplacement_apres_suppression_recalcule_les_cibles(client, collection_
 
     assert len(donnees["tracks"]) == 6
     assert len(donnees["targets"]) == 6
+
+
+def test_remplacement_profil_inconnu_message_identique_a_la_generation(client, collection_xml):
+    # Même faute (profil inexistant), même message que sur /api/generate : la
+    # route de remplacement ne doit pas revalider le profil avec un message
+    # moins informatif que celui du moteur.
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]]
+
+    reponse_generation = client.post(
+        "/api/generate", json=corps(collection_xml, profile="inexistant")
+    )
+    reponse_remplacement = client.post(
+        "/api/replace",
+        json=corps(collection_xml, track_ids=ids, position=0, profile="inexistant"),
+    )
+
+    assert reponse_remplacement.status_code == 400
+    assert reponse_remplacement.json()["detail"] == reponse_generation.json()["detail"]
+    assert "disponibles" in reponse_remplacement.json()["detail"]
 
 
 def test_remplacement_position_invalide_renvoie_400(client, collection_xml):

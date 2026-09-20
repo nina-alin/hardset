@@ -38,7 +38,18 @@ def main() -> int:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
     print(f"hardset écoute sur {url}")
-    uvicorn.run(create_app(config), host=args.host, port=args.port, log_level="warning")
+    try:
+        uvicorn.run(create_app(config), host=args.host, port=args.port, log_level="warning")
+    except OSError as exc:
+        # Cas ordinaire : relancer l'outil alors qu'une instance tourne déjà sur
+        # ce port. L'utilisatrice doit voir une phrase qui lui dit quoi faire,
+        # pas une trace Python.
+        print(
+            f"Impossible d'écouter sur le port {args.port} : {exc}. "
+            "Une autre instance de hardset tourne peut-être déjà sur ce port : "
+            "relancez avec --port pour en choisir un autre."
+        )
+        return 1
     return 0
 
 

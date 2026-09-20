@@ -93,6 +93,17 @@ class ReplacePayload(SetRequestPayload):
     position: int
 
 
+class TargetsPayload(SetRequestPayload):
+    """Demande de recalcul des cibles pour une longueur donnée.
+
+    Hérite de `SetRequestPayload`, et donc de son champ `path`, pour que la page
+    puisse réutiliser telle quelle la requête lue dans le formulaire ; la route,
+    elle, n'ouvre pas la collection : les cibles n'en dépendent pas.
+    """
+
+    count: int
+
+
 class ExportPayload(CollectionPayload):
     track_ids: list[str]
     playlist_name: str
@@ -183,6 +194,22 @@ def create_app(config: Config) -> FastAPI:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         return cache[cle]
 
+    def profil_demande(request: SetRequest):
+        """Profil de la requête, ou 400 portant le message du moteur.
+
+        Même message que celui de `_profile` (`engine/sequencing.py`, interface
+        privée et donc non réutilisable ici) : la liste des profils disponibles
+        est ce qui aide réellement l'utilisatrice à corriger sa requête.
+        """
+        try:
+            return config.profils[request.profile]
+        except KeyError as exc:
+            connus = ", ".join(sorted(config.profils))
+            raise HTTPException(
+                status_code=400,
+                detail=f"profil '{request.profile}' inexistant (disponibles : {connus})",
+            ) from exc
+
     def resoudre(collection: Collection, track_ids: list[str]) -> list[Track]:
         par_id = {track.id: track for track in collection.tracks}
         try:
@@ -242,18 +269,7 @@ def create_app(config: Config) -> FastAPI:
         lue = charger(payload.path)
         requete = payload.to_request()
         tracks = resoudre(lue, payload.track_ids)
-        try:
-            profil = config.profils[requete.profile]
-        except KeyError as exc:
-            # Même message que celui du moteur sur `/api/generate` (`_profile`
-            # dans `engine/sequencing.py`, interface privée et donc non
-            # réutilisable ici) : la liste des profils disponibles est ce qui
-            # aide réellement l'utilisatrice à corriger sa requête.
-            connus = ", ".join(sorted(config.profils))
-            raise HTTPException(
-                status_code=400,
-                detail=f"profil '{requete.profile}' inexistant (disponibles : {connus})",
-            ) from exc
+        profil = profil_demande(requete)
 
         # Les cibles sont recalculées pour la longueur reçue : après une suppression,
         # la courbe se redistribue sur les positions restantes.
@@ -273,6 +289,28 @@ def create_app(config: Config) -> FastAPI:
         except SequencingError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _set_payload(resultat, lue, requete)
+
+    @app.post("/api/targets")
+    def cibles(payload: TargetsPayload) -> dict:
+        """Cibles d'un set de `count` positions, pour la demande reçue.
+
+        Sert à la page après une suppression de ligne : la courbe d'énergie se
+        redistribue sur les positions restantes, et cette redistribution est de
+        la logique musicale — elle n'a donc qu'un propriétaire, le serveur, et
+        c'est la même que celle qu'imposera le prochain remplacement.
+        """
+        requete = payload.to_request()
+        profil = profil_demande(requete)
+        if payload.count < 0:
+            raise HTTPException(
+                status_code=400, detail="count doit être positif ou nul"
+            )
+        return {
+            "targets": [
+                {"position": c.position, "bpm": c.bpm, "mood": c.mood}
+                for c in build_targets(requete, profil, payload.count)
+            ]
+        }
 
     @app.post("/api/export")
     def exporter(payload: ExportPayload) -> Response:

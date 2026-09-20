@@ -430,3 +430,53 @@ def test_pas_de_penurie_inventee_par_le_remplacement(client, collection_xml):
         "/api/replace", json=corps(collection_xml, track_ids=ids, position=2)
     ).json()
     assert "shortage" not in [w["code"] for w in donnees["warnings"]]
+
+
+# --- Recalcul des cibles (propriété du serveur) ---------------------------
+# La forme de la courbe d'énergie est de la logique musicale : elle appartient
+# au serveur. Après une suppression de ligne, la page redemande les cibles pour
+# la nouvelle longueur au lieu de tronquer les siennes.
+
+def test_cibles_redistribuees_sur_la_longueur_demandee(client, collection_xml):
+    donnees = client.post("/api/targets", json=corps(collection_xml, count=5)).json()
+    bpms = [c["bpm"] for c in donnees["targets"]]
+    assert len(bpms) == 5
+    assert [c["position"] for c in donnees["targets"]] == list(range(5))
+    # Redistribuées, pas tronquées : la courbe couvre toujours toute la plage.
+    assert bpms[0] == pytest.approx(150.0)
+    assert bpms[-1] == pytest.approx(200.0)
+
+
+def test_cibles_identiques_a_celles_dun_remplacement_de_meme_longueur(client, collection_xml):
+    # Un seul propriétaire : ce que rend `/api/targets` après une suppression
+    # doit être exactement ce que `/api/replace` imposera au coup suivant.
+    genere = client.post("/api/generate", json=corps(collection_xml)).json()
+    ids = [t["id"] for t in genere["tracks"]][:5]
+
+    remplace = client.post(
+        "/api/replace", json=corps(collection_xml, track_ids=ids, position=0)
+    ).json()
+    cibles = client.post("/api/targets", json=corps(collection_xml, count=5)).json()
+
+    assert cibles["targets"] == remplace["targets"]
+
+
+def test_cibles_pour_un_set_vide(client, collection_xml):
+    donnees = client.post("/api/targets", json=corps(collection_xml, count=0)).json()
+    assert donnees["targets"] == []
+
+
+def test_cibles_longueur_negative_renvoie_400(client, collection_xml):
+    reponse = client.post("/api/targets", json=corps(collection_xml, count=-1))
+    assert reponse.status_code == 400
+
+
+def test_cibles_profil_inconnu_message_identique_a_la_generation(client, collection_xml):
+    reponse_generation = client.post(
+        "/api/generate", json=corps(collection_xml, profile="inexistant")
+    )
+    reponse_cibles = client.post(
+        "/api/targets", json=corps(collection_xml, count=5, profile="inexistant")
+    )
+    assert reponse_cibles.status_code == 400
+    assert reponse_cibles.json()["detail"] == reponse_generation.json()["detail"]

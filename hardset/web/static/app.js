@@ -129,7 +129,7 @@ function render() {
       }),
       el('button', {
         type: 'button', textContent: '✕', title: 'supprimer',
-        onclick: () => supprimer(index),
+        onclick: (evenement) => supprimer(index, evenement.currentTarget),
       }),
     ]);
 
@@ -214,9 +214,17 @@ async function remplacer(index, bouton) {
   });
 }
 
-function supprimer(index) {
+async function supprimer(index, bouton) {
   state.set.tracks.splice(index, 1);
-  state.set.targets = state.set.targets.slice(0, state.set.tracks.length);
+  // Les cibles appartiennent au serveur, qui les redistribue sur la nouvelle
+  // longueur. Les tronquer ici afficherait une courbe cible fausse — plus basse
+  // que l'obtenu, donnant à voir un dépassement de BPM qui n'existe pas — et
+  // reviendrait à laisser le navigateur décider de la forme de la courbe
+  // d'énergie, ce qui est de la logique musicale.
+  await proteger(bouton, async () => {
+    const reponse = await api('/api/targets', requete({ count: state.set.tracks.length }));
+    state.set.targets = (await reponse.json()).targets;
+  });
   render();
 }
 

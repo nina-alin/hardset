@@ -642,6 +642,31 @@ def test_un_set_descendant_est_refuse(client, collection_xml):
     assert "plus lent" in detail and "180" in detail and "160" in detail
 
 
+def test_un_set_descendant_avec_les_bornes_de_la_page_est_refuse(client, collection_xml):
+    # `test_un_set_descendant_est_refuse` ci-dessus envoie des bornes brutes
+    # larges (150-200, celles du corps par défaut) en plus des identifiants — un
+    # corps que la page ne produit jamais : dès qu'un son est épinglé, elle
+    # recopie son BPM dans la borne correspondante et envoie donc des bornes déjà
+    # dérivées. Ici bpm_min=180 (le tempo du morceau 30, le départ) et
+    # bpm_max=160 (celui du morceau 10, la fin) : le corps exact de la page pour
+    # un set descendant. Avant correction, `to_request` validait ces bornes
+    # elles-mêmes et renvoyait le message générique nommant les champs d'API ;
+    # c'est `resolve` qui doit trancher, et nommer les deux morceaux.
+    reponse = client.post(
+        "/api/generate",
+        json=corps(
+            collection_xml,
+            start_track_id="30",
+            end_track_id="10",
+            bpm_min=180.0,
+            bpm_max=160.0,
+        ),
+    )
+    assert reponse.status_code == 400
+    detail = reponse.json()["detail"]
+    assert "plus lent" in detail and "180" in detail and "160" in detail
+
+
 def test_un_depart_au_dela_du_bpm_max_demande_est_refuse(client, collection_xml):
     reponse = client.post(
         "/api/generate", json=corps(collection_xml, start_track_id="30", bpm_max=170.0)

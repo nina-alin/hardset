@@ -95,7 +95,15 @@ class SetRequestPayload(CollectionPayload):
                     status_code=400,
                     detail=f"mood {mood} hors de l'échelle [{MOOD_MIN}, {config.mood_max}]",
                 )
-        if self.bpm_min > self.bpm_max:
+        # Cette garde ne s'applique qu'en l'absence d'épinglage. Dès qu'un son de
+        # départ ou de fin est choisi, la page recopie son BPM dans la borne
+        # correspondante avant d'envoyer la requête : `bpm_min`/`bpm_max` ne sont
+        # alors plus une saisie à valider ici, mais une dérivation que `resolve`
+        # (`engine/pinning.py`) recalcule de toute façon depuis les morceaux
+        # épinglés. Une plage dérivée inversée n'est donc pas un trou de
+        # validation — c'est `resolve` qui doit la refuser, avec un message qui
+        # nomme les deux morceaux plutôt que les deux champs d'API.
+        if self.start_track_id is None and self.end_track_id is None and self.bpm_min > self.bpm_max:
             raise HTTPException(
                 status_code=400,
                 detail=(

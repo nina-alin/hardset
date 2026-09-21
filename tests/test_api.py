@@ -782,3 +782,18 @@ def test_remplacement_dun_set_descendant_avec_les_bornes_de_la_page_est_refuse(
     assert reponse.status_code == 400
     detail = reponse.json()["detail"]
     assert "plus lent" in detail and "180" in detail and "160" in detail
+
+
+def test_recherche_avec_un_plafond_nul_ou_negatif_ne_rend_rien(client, collection_xml):
+    # `search` (engine/search.py) déclare et teste que `limit <= 0` ne rend
+    # rien ; la route doit laisser cette décision atteignable par HTTP plutôt
+    # que la remplacer silencieusement par 1 (`max(1, ...)`).
+    donnees = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre", "limit": 0}
+    ).json()
+    assert donnees == {"tracks": [], "truncated": False}
+
+    donnees_negatif = client.post(
+        "/api/tracks", json={"path": str(collection_xml), "q": "titre", "limit": -5}
+    ).json()
+    assert donnees_negatif == {"tracks": [], "truncated": False}

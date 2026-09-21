@@ -311,7 +311,14 @@ def create_app(config: Config) -> FastAPI:
         morceau que la génération écarterait (`engine/search.py`).
         """
         lue = charger(payload.path)
-        limite = max(1, min(payload.limit, TRACKS_LIMIT_MAX))
+        # Le plancher est laissé au moteur (revue finale, point C) :
+        # `search` déclare et teste que `limit <= 0` ne rend rien, et un
+        # `max(1, ...)` ici rendait cette branche inatteignable par HTTP — un
+        # client demandant `limit: 0` recevait un morceau et `truncated: true`
+        # au lieu d'une liste vide. Seul le plafond haut reste de la route :
+        # `TRACKS_LIMIT_MAX` protège d'une réponse énorme, ce que le moteur ne
+        # décide pas de son côté.
+        limite = min(payload.limit, TRACKS_LIMIT_MAX)
         trouves, tronque = search(lue.tracks, payload.q, limite)
         return {
             "tracks": [_track_payload(track) for track in trouves],

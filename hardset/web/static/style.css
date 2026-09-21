@@ -103,7 +103,11 @@ tr.occupe { opacity: 0.4; }
 .choix { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
 .choix .epingle { flex: 1; }
 
-/* Une borne imposée par un son choisi se voit : elle n'est plus modifiable. */
-input:read-only { opacity: 0.55; }
+/* Une borne imposée par un son choisi se voit : elle n'est plus modifiable.
+   Restreint aux deux champs de BPM : `input:read-only` matche tout `<input>`
+   non mutable, `disabled` compris — les deux champs de recherche étaient
+   grisés avant tout chargement de collection pour une raison qui n'a rien à
+   voir (revue finale, point E2). */
+#bpm-min:read-only, #bpm-max:read-only { opacity: 0.55; }
 
 .export { margin-top: 1rem; }

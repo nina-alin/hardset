@@ -116,6 +116,13 @@ function formateMood(valeur) {
 // Le repère suit le morceau épinglé s'il est déplacé : il est posé par
 // comparaison d'id, jamais par position. Les boutons de la ligne restent
 // actifs — l'épinglage contraint la génération, il ne verrouille pas l'édition.
+//
+// Pas un bug (revue finale, point E8) : après un ⟳ sur cette ligne, le
+// morceau choisi quitte le set affiché et le 📌 disparaît d'ici — mais
+// l'étiquette `#choix-<role>` et le verrouillage du champ BPM, ailleurs dans
+// la page, restent tels quels. L'épinglage décrit la *prochaine* génération,
+// pas le set courant ; un ⟳ ne le retire pas, il en fait juste sortir le
+// morceau qu'il désignait.
 function celluleNumero(track, index) {
   const epingle = [state.pins.start, state.pins.end].some((p) => p && p.id === track.id);
   return epingle
@@ -200,6 +207,12 @@ const minuteries = { start: null, end: null };
 // retire un son choisi. Sans collection, les valeurs par défaut du formulaire.
 function bornesCollection() {
   const lue = state.collection;
+  // { min: 150, max: 200 } recopie les valeurs par défaut de `index.html`
+  // (#bpm-min, #bpm-max) : cohérent aujourd'hui, silencieusement divergent au
+  // premier changement de l'un des deux sans l'autre (revue finale, point
+  // E7). Cette branche n'est atteignable qu'avant tout chargement de
+  // collection — les champs de recherche épinglés y sont encore désactivés,
+  // donc aucun retrait de son choisi ne peut encore s'y produire.
   if (!lue || !(lue.bpm_max > 0)) return { min: 150, max: 200 };
   return { min: Math.floor(lue.bpm_min), max: Math.ceil(lue.bpm_max) };
 }
@@ -326,7 +339,11 @@ async function chargerCollection() {
     // `appliquerPin` remet du même coup les bornes de BPM de la collection lue.
     state.pins = { start: null, end: null };
     for (const role of ['start', 'end']) {
-      $(`recherche-${role}`).disabled = false;
+      const champ = $(`recherche-${role}`);
+      champ.disabled = false;
+      // L'invite avant chargement (« Charger une collection… ») cède la place
+      // à l'invite normale, une fois la recherche effectivement utilisable.
+      champ.placeholder = 'artiste ou titre…';
       appliquerPin(role);
     }
 

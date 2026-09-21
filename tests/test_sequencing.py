@@ -578,6 +578,17 @@ def test_le_remplacement_respecte_la_plage_accordee():
     assert apres.tracks[1].bpm >= 182.0
 
 
+def test_replace_at_ne_verrouille_pas_la_position_epinglee():
+    # L'épinglage contraint la génération, il ne verrouille pas l'édition —
+    # affirmé par la spec et par la docstring de `replace_at`, et qui ne
+    # tenait jusqu'ici que par l'absence de code de protection.
+    demande = requete(start_track_id="182-3")
+    jeu = generate(collection_dense(), demande, CONFIG)
+    assert jeu.tracks[0].id == "182-3"
+    apres = replace_at(jeu, 0, collection_dense(), demande, CONFIG)
+    assert apres.tracks[0].id != "182-3"
+
+
 def test_la_collection_peut_etre_un_iterateur():
     # `generate` lit la collection deux fois désormais (résolution puis
     # filtrage) : un itérateur ne doit pas être consommé au premier passage.

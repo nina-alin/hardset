@@ -103,6 +103,12 @@ class SetRequestPayload(CollectionPayload):
         # épinglés. Une plage dérivée inversée n'est donc pas un trou de
         # validation — c'est `resolve` qui doit la refuser, avec un message qui
         # nomme les deux morceaux plutôt que les deux champs d'API.
+        #
+        # Obligation, pas hasard (revue finale, point E9) : dès qu'un id est
+        # épinglé, cette garde ne s'applique plus du tout, et ne repose donc
+        # entièrement que sur le fait que les trois routes appellent `resolve`
+        # ensuite. Toute route qui construirait une `SetRequest` sans appeler
+        # `resolve` derrière laisserait passer une plage dérivée inversée.
         if self.start_track_id is None and self.end_track_id is None and self.bpm_min > self.bpm_max:
             raise HTTPException(
                 status_code=400,
@@ -411,6 +417,13 @@ def create_app(config: Config) -> FastAPI:
         # épinglage les cibles n'en dépendent pas, et la route garde la
         # propriété que défend sa docstring. Le cache rend ce chargement
         # gratuit en pratique — la page vient de lire la collection.
+        #
+        # Cette condition rejoue « y a-t-il un épinglé ? », exactement celle
+        # que `resolve` (`engine/pinning.py`) teste déjà en tête d'elle-même
+        # pour se dispenser de parcourir la collection. Défendable ici — elle
+        # évite l'E/S de `charger` quand elle est fausse — mais l'invariant vit
+        # alors à deux endroits : c'est `resolve` qui en reste la source, et
+        # cette condition doit rester d'accord avec elle.
         if requete.start_track_id is not None or requete.end_track_id is not None:
             try:
                 requete, _ = resolve(charger(payload.path).tracks, requete)

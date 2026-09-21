@@ -20,7 +20,8 @@ from hardset.model import SetRequest, Track
 
 
 class PinningError(Exception):
-    """Choix d'épinglage inexploitable : morceau introuvable, ou plage vide."""
+    """Choix d'épinglage inexploitable : morceau introuvable, le même morceau
+    des deux côtés, ou plage vide."""
 
 
 @dataclass(frozen=True)

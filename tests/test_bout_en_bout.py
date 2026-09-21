@@ -154,3 +154,30 @@ def test_un_morceau_sans_mood_est_trouvable_donc_epinglable(client):
     ).json()
     assert [t["title"] for t in donnees["tracks"]] == ["Industrial Corridor"]
     assert donnees["tracks"][0]["moods"] == []
+
+
+def test_generation_epinglee_aux_deux_bouts_jusqu_au_xml_exporte(client):
+    """Spec § 7 : une génération épinglée des deux côtés, jusqu'au XML exporté.
+
+    « Mirror Groove » (9, 118 BPM) ouvre le set, « Beatgrid Ancrée » (11,
+    160 BPM) le ferme ; la plage de BPM s'accorde à leur tempo.
+    """
+    genere = client.post(
+        "/api/generate", json=corps(start_track_id="9", end_track_id="11")
+    ).json()
+    ids = [t["id"] for t in genere["tracks"]]
+    assert ids[0] == "9"
+    assert ids[-1] == "11"
+    assert len(ids) >= 3, "le vivier doit laisser au moins un morceau entre les deux épingles"
+
+    reponse = client.post(
+        "/api/export",
+        json={"path": str(FIXTURE), "track_ids": ids, "playlist_name": "Épinglé des deux côtés"},
+    )
+    assert reponse.status_code == 200
+
+    racine = ElementTree.fromstring(reponse.content)
+    # La playlist exportée porte les morceaux dans le même ordre que le set
+    # généré : le son de départ en premier, le son de fin en dernier.
+    assert [t.get("Key") for t in racine.findall("PLAYLISTS/NODE/NODE/TRACK")] == ids
+    assert {t.get("TrackID") for t in racine.findall("COLLECTION/TRACK")} == set(ids)

@@ -683,3 +683,20 @@ def test_le_remplacement_respecte_la_borne_imposee(client, collection_xml):
         json=corps(collection_xml, start_track_id="10", track_ids=ids, position=1),
     ).json()
     assert donnees["tracks"][1]["bpm"] >= 160.0
+
+
+def test_les_cibles_du_remplacement_suivent_la_borne_imposee(client, collection_xml):
+    # Contrairement au test précédent (plancher venant du filtrage du vivier
+    # par `replace_at`), celui-ci porte sur la courbe elle-même : les cibles
+    # rendues par `/api/replace` doivent être celles de la demande accordée au
+    # son épinglé, pas de la demande brute — sans quoi la courbe affichée
+    # cesserait de correspondre à celle que le remplacement vise.
+    jeu = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10")
+    ).json()
+    ids = [t["id"] for t in jeu["tracks"]]
+    donnees = client.post(
+        "/api/replace",
+        json=corps(collection_xml, start_track_id="10", track_ids=ids, position=1),
+    ).json()
+    assert donnees["targets"][0]["bpm"] == 160.0

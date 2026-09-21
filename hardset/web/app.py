@@ -34,13 +34,13 @@ STATIC = Path(__file__).parent / "static"
 
 # Plafond de `count` sur `/api/targets` (revue finale). Les autres routes sont
 # de fait bornées par la taille de la collection chargée (`generate` fait
-# `min(vise, len(pool))`) ; cette route-ci ne charge délibérément aucune
-# collection, puisque les cibles n'en dépendent pas (voir `cibles` ci-dessous),
-# donc cette borne ne peut pas être la même. On fixe à la place un plafond
-# arbitraire mais très généreux : aucune collection Rekordbox réaliste
-# n'approche cent mille morceaux, et le calcul à cette taille reste rapide
-# (mesuré : ~0,2 s, ~7 Mo de réponse), là où deux millions produisait un blocage
-# de plusieurs secondes.
+# `min(vise, len(pool))`) ; cette route-ci n'ouvre la collection que pour
+# résoudre un son épinglé (voir `cibles` ci-dessous) — `count`, lui, n'en
+# dépend jamais, donc cette borne ne peut pas être la même. On fixe à la place
+# un plafond arbitraire mais très généreux : aucune collection Rekordbox
+# réaliste n'approche cent mille morceaux, et le calcul à cette taille reste
+# rapide (mesuré : ~0,2 s, ~7 Mo de réponse), là où deux millions produisait
+# un blocage de plusieurs secondes.
 TARGETS_COUNT_MAX = 100_000
 
 # Plafond de `limit` sur `/api/tracks`. La page en demande 20 : une liste de
@@ -134,7 +134,8 @@ class TargetsPayload(SetRequestPayload):
 
     Hérite de `SetRequestPayload`, et donc de son champ `path`, pour que la page
     puisse réutiliser telle quelle la requête lue dans le formulaire ; la route,
-    elle, n'ouvre pas la collection : les cibles n'en dépendent pas.
+    elle, n'ouvre la collection que pour résoudre un son épinglé — sans
+    épinglage, les cibles n'en dépendent pas.
     """
 
     count: int

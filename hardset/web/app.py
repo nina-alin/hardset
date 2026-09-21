@@ -24,9 +24,9 @@ from hardset.engine.sequencing import (
     SequencingError,
     generate,
     replace_at,
-    shortage_warnings,
+    request_warnings,
 )
-from hardset.model import MOOD_MIN, GeneratedSet, SetRequest, Track
+from hardset.model import MOOD_MIN, GeneratedSet, SetRequest, Track, WarningCode
 from hardset.rekordbox.reader import Collection, CollectionError, read_collection
 from hardset.rekordbox.writer import build_playlist_xml, default_playlist_name, slug
 
@@ -338,11 +338,12 @@ def create_app(config: Config) -> FastAPI:
         # Les cibles sont recalculées pour la longueur reçue : après une suppression,
         # la courbe se redistribue sur les positions restantes.
         #
-        # La pénurie relevée à la génération est recalculée, et non repartie de
-        # zéro : le moteur la préserve délibérément à travers les remplacements,
-        # et le set courant reconstruit ici doit la porter comme celui que
-        # `generate` avait rendu. Elle ne dépend que de la demande et de la
-        # collection, donc `shortage_warnings` la redonne à l'identique.
+        # La pénurie et l'épinglage relevés à la génération sont recalculés, et
+        # non repartis de zéro : le moteur les préserve délibérément à travers
+        # les remplacements, et le set courant reconstruit ici doit les porter
+        # comme celui que `generate` avait rendu. Ni l'un ni l'autre ne dépend
+        # de rien d'autre que la demande et la collection, donc
+        # `request_warnings` les redonne à l'identique (revue finale, point A).
         try:
             # Les cibles du set courant doivent être celles de la demande
             # accordée aux sons épinglés, sinon la courbe affichée cesse de
@@ -351,11 +352,29 @@ def create_app(config: Config) -> FastAPI:
             courant = GeneratedSet(
                 tracks=tracks,
                 targets=build_targets(accordee, profil, len(tracks), config.mood_max),
-                warnings=shortage_warnings(lue.tracks, requete),
+                # Les avertissements de pénurie et d'épinglage sont recalculés
+                # après le remplacement, sur le set qui en résulte : ici, seul
+                # l'avertissement propre à cette tentative de remplacement
+                # (`replacement_shortage`) compte, `replace_at` ne fait que le
+                # reporter tel quel.
+                warnings=[],
             )
             resultat = replace_at(courant, payload.position, lue.tracks, requete, config)
         except (SequencingError, PinningError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Recalculés sur le set réellement affiché après remplacement (et non
+        # sur celui d'avant) : un morceau épinglé que ce remplacement vient de
+        # retirer de sa position ne doit porter aucune affirmation sur une
+        # position qu'il n'occupe plus.
+        resultat = GeneratedSet(
+            tracks=resultat.tracks,
+            targets=resultat.targets,
+            warnings=[
+                *request_warnings(lue.tracks, requete, current=resultat.tracks),
+                *[w for w in resultat.warnings if w.code is WarningCode.REPLACEMENT_SHORTAGE],
+            ],
+        )
         return _set_payload(resultat, lue, requete)
 
     @app.post("/api/targets")

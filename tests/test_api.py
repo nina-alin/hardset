@@ -725,3 +725,26 @@ def test_les_cibles_du_remplacement_suivent_la_borne_imposee(client, collection_
         json=corps(collection_xml, start_track_id="10", track_ids=ids, position=1),
     ).json()
     assert donnees["targets"][0]["bpm"] == 160.0
+
+
+def test_l_avertissement_d_epinglage_survit_au_remplacement(client, collection_xml):
+    # Le morceau 10 est CALME (mood 1) ; on ne demande que le mood 5 : il est
+    # hors critères, et généré avec un avertissement `pin_off_filters`.
+    genere = client.post(
+        "/api/generate", json=corps(collection_xml, start_track_id="10", moods=[5])
+    ).json()
+    assert genere["tracks"][0]["id"] == "10"
+    assert "pin_off_filters" in {w["code"] for w in genere["warnings"]}
+
+    ids = [t["id"] for t in genere["tracks"]]
+    # Position 2 : ni la position épinglée (0), ni la dernière — le morceau
+    # épinglé reste en place après ce remplacement.
+    donnees = client.post(
+        "/api/replace",
+        json=corps(
+            collection_xml, start_track_id="10", moods=[5], track_ids=ids, position=2
+        ),
+    ).json()
+
+    assert donnees["tracks"][0]["id"] == "10"
+    assert "pin_off_filters" in {w["code"] for w in donnees["warnings"]}

@@ -11,7 +11,7 @@ titres l'effet est inaudible, et la tracklist reste éditable.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from hardset.config import Config, Weights
 from hardset.engine.curves import build_targets
@@ -197,6 +197,61 @@ def _avertissements_epinglage(
     return avertissements
 
 
+def _placement_affiche(pins: Pins, current: Sequence[Track]) -> dict[int, Track]:
+    """Comme `_placement`, mais pour les positions réellement occupées dans un
+    set déjà affiché, plutôt que celles qu'une génération fraîche imposerait.
+
+    Le set affiché est éditable à la main : l'utilisatrice a pu supprimer ou
+    remplacer la ligne épinglée (revue finale, point A). La vérification se
+    fait donc par identité du morceau réellement présent à chaque extrémité de
+    `current`, et non par simple appartenance de son id à `pins` — un morceau
+    épinglé qui n'y est plus ne doit produire aucune affirmation sur une
+    position qu'il n'occupe plus.
+    """
+    impose: dict[int, Track] = {}
+    if not current:
+        return impose
+    if pins.start is not None and current[0].id == pins.start.id:
+        impose[0] = pins.start
+    derniere = len(current) - 1
+    if pins.end is not None and derniere not in impose and current[derniere].id == pins.end.id:
+        impose[derniere] = pins.end
+    return impose
+
+
+def request_warnings(
+    tracks: Iterable[Track], request: SetRequest, current: Sequence[Track] | None = None
+) -> list[SetWarning]:
+    """Avertissements de la demande — pénurie et épinglage — que `generate`
+    produirait pour cette demande.
+
+    Aide publique unique, pour que la couche web, qui reconstruit le set
+    courant à chaque remplacement, les recalcule ici même plutôt que de les
+    perdre ou de les faire reporter par le navigateur (revue finale, point A).
+    `generate` s'appuie sur exactement le même calcul : avoir deux chemins qui
+    le refont chacun de son côté est la cause du défaut corrigé ici, et les
+    laisser distincts les ferait rediverger.
+
+    `current`, quand fourni, est le set réellement affiché — potentiellement
+    édité à la main, ligne épinglée supprimée ou remplacée comprise : les
+    avertissements d'épinglage ne portent alors que sur les morceaux qui
+    occupent réellement la première et la dernière position de CE set (voir
+    `_placement_affiche`). Sans lui (le cas de `generate`, qui n'a encore
+    produit aucun set affiché), les positions qu'une génération fraîche
+    imposerait sont utilisées à la place.
+    """
+    accordee, pins, vivier = _vivier(tracks, request)
+    disponibles = len(vivier) + len(pins.epingles)
+    if current is None:
+        impose = _placement(pins, min(request.track_count, disponibles))
+    else:
+        impose = _placement_affiche(pins, current)
+    return [
+        *_penurie(disponibles, request.track_count),
+        *_avertissements_epinglage(pins, impose, accordee),
+    ]
+
+
 def shortage_warnings(tracks: Iterable[Track], request: SetRequest) -> list[SetWarning]:
     """Avertissement de pénurie que `generate` produirait pour cette demande.
 
@@ -225,9 +280,10 @@ def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> Ge
     contrainte imposée, pas un échec de sélection, et la courbe le montre.
     """
     profile = _profile(request, config)   # valide le profil avant toute autre chose
+    materiel = list(tracks)
     # `request` est rebindée sur la demande accordée aux épinglés : tout ce qui
     # suit (cibles, filtrage, avertissements) doit voir les bornes dérivées.
-    request, pins, pool = _vivier(tracks, request)
+    request, pins, pool = _vivier(materiel, request)
 
     vise = request.track_count
     disponibles = len(pool) + len(pins.epingles)
@@ -235,10 +291,10 @@ def generate(tracks: Iterable[Track], request: SetRequest, config: Config) -> Ge
 
     targets = build_targets(request, profile, count, config.mood_max)
     impose = _placement(pins, count)
-    avertissements = [
-        *_penurie(disponibles, vise),
-        *_avertissements_epinglage(pins, impose, request),
-    ]
+    # `request_warnings` est la même aide que `/api/replace` recalcule après un
+    # remplacement (revue finale, point A) : un seul calcul pour les deux
+    # chemins, pour qu'ils ne puissent plus diverger.
+    avertissements = request_warnings(materiel, request)
 
     rng = random.Random(request.seed)
     retenus: list[Track] = []

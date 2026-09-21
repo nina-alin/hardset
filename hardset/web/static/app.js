@@ -6,6 +6,8 @@ const state = {
   collection: null,
   set: null,
   path: '',
+  // Sons imposés aux extrémités, tels que /api/tracks les a rendus (ou null).
+  pins: { start: null, end: null },
 };
 window.state = state;
 
@@ -73,6 +75,8 @@ function requete(extra = {}) {
     profile: $('profile').value,
     duration_min: Number($('duration').value),
     seconds_per_track: Number($('seconds').value),
+    start_track_id: state.pins.start ? state.pins.start.id : null,
+    end_track_id: state.pins.end ? state.pins.end.id : null,
     ...extra,
   };
 }
@@ -107,6 +111,16 @@ function moodLabel(track) {
 // est l'information utile, pas un arrondi qui la ferait passer pour un niveau.
 function formateMood(valeur) {
   return Number.isInteger(valeur) ? String(valeur) : valeur.toFixed(1);
+}
+
+// Le repère suit le morceau épinglé s'il est déplacé : il est posé par
+// comparaison d'id, jamais par position. Les boutons de la ligne restent
+// actifs — l'épinglage contraint la génération, il ne verrouille pas l'édition.
+function celluleNumero(track, index) {
+  const epingle = [state.pins.start, state.pins.end].some((p) => p && p.id === track.id);
+  return epingle
+    ? { textContent: `${index + 1} 📌`, title: 'son choisi avant la génération' }
+    : { textContent: String(index + 1) };
 }
 
 function render() {
@@ -153,7 +167,7 @@ function render() {
     ]);
 
     corps.append(el('tr', {}, [
-      el('td', { textContent: String(index + 1) }),
+      el('td', celluleNumero(track, index)),
       el('td', { textContent: track.artist }),
       el('td', { textContent: track.title }),
       el('td', { textContent: track.bpm.toFixed(1) }),
@@ -166,6 +180,118 @@ function render() {
 
   renderAvertissements(jeu.warnings);
   window.renderCurve(jeu.targets, jeu.tracks);
+}
+
+// --- Sons de départ et de fin ---------------------------------------------
+//
+// Un son choisi impose la borne de BPM correspondante. La page écrit la valeur
+// dans le champ et le verrouille, mais ce n'est que de l'affichage : le serveur
+// re-dérive toujours la borne depuis l'id envoyé et ne lit jamais ce que le
+// champ a transmis (hardset/engine/pinning.py).
+
+const PINS = {
+  start: { bpm: 'bpm-min', note: 'note-bpm-min', borne: (b) => b.min },
+  end:   { bpm: 'bpm-max', note: 'note-bpm-max', borne: (b) => b.max },
+};
+
+const minuteries = { start: null, end: null };
+
+// Bornes de BPM de la collection chargée, celles que le champ retrouve quand on
+// retire un son choisi. Sans collection, les valeurs par défaut du formulaire.
+function bornesCollection() {
+  const lue = state.collection;
+  if (!lue || !(lue.bpm_max > 0)) return { min: 150, max: 200 };
+  return { min: Math.floor(lue.bpm_min), max: Math.ceil(lue.bpm_max) };
+}
+
+function appliquerPin(role) {
+  const pin = state.pins[role];
+  const { bpm, note, borne } = PINS[role];
+  const champ = $(`recherche-${role}`);
+  const choix = $(`choix-${role}`);
+
+  $(`resultats-${role}`).replaceChildren();
+  $(`resultats-${role}`).hidden = true;
+  choix.replaceChildren();
+  choix.hidden = !pin;
+  champ.hidden = Boolean(pin);
+
+  if (pin) {
+    choix.append(
+      el('span', {
+        className: 'epingle',
+        textContent: `📌 ${pin.artist} — ${pin.title} · ${pin.bpm.toFixed(1)} BPM`,
+      }),
+      el('button', {
+        type: 'button', textContent: '✕', title: 'retirer ce choix',
+        onclick: () => { state.pins[role] = null; appliquerPin(role); },
+      }),
+    );
+    $(bpm).value = pin.bpm;
+  } else {
+    champ.value = '';
+    $(bpm).value = borne(bornesCollection());
+  }
+  $(bpm).readOnly = Boolean(pin);
+  $(note).hidden = !pin;
+}
+
+function choisirPin(role, track) {
+  const autre = role === 'start' ? 'end' : 'start';
+  if (state.pins[autre] && state.pins[autre].id === track.id) {
+    // Le serveur le refuserait aussi ; le dire tout de suite évite un
+    // aller-retour pour une erreur visible d'ici.
+    renderAvertissements([{
+      message: 'le même morceau ne peut pas être à la fois le son de départ et le son de fin',
+    }]);
+    return;
+  }
+  state.pins[role] = track;
+  appliquerPin(role);
+}
+
+async function rechercher(role) {
+  const q = $(`recherche-${role}`).value.trim();
+  const liste = $(`resultats-${role}`);
+  if (!q) {
+    liste.replaceChildren();
+    liste.hidden = true;
+    return;
+  }
+  try {
+    const reponse = await api('/api/tracks', { path: state.path, q, limit: 20 });
+    const donnees = await reponse.json();
+    liste.replaceChildren(...donnees.tracks.map((track) => el('li', {}, [
+      el('button', {
+        type: 'button',
+        textContent: `${track.artist} — ${track.title} · ${track.bpm.toFixed(1)} BPM · ${track.camelot ?? '—'}`,
+        onclick: () => choisirPin(role, track),
+      }),
+    ])));
+    if (!donnees.tracks.length) {
+      liste.append(el('li', { className: 'discret', textContent: 'aucun morceau trouvé' }));
+    } else if (donnees.truncated) {
+      liste.append(el('li', {
+        className: 'discret', textContent: 'affinez : d’autres morceaux correspondent',
+      }));
+    }
+    liste.hidden = false;
+  } catch (erreur) {
+    renderAvertissements([{ message: erreur.message }]);
+  }
+}
+
+// Une frappe ne déclenche pas un appel : la temporisation évite une requête par
+// caractère sur une collection de plusieurs centaines de morceaux.
+function brancherRecherche(role) {
+  const champ = $(`recherche-${role}`);
+  champ.oninput = () => {
+    clearTimeout(minuteries[role]);
+    minuteries[role] = setTimeout(() => rechercher(role), 200);
+  };
+  champ.onkeydown = (evenement) => {
+    if (evenement.key === 'Escape') $(`resultats-${role}`).hidden = true;
+  };
 }
 
 // --- Actions --------------------------------------------------------------
@@ -196,9 +322,12 @@ async function chargerCollection() {
       ]));
     }
 
-    if (donnees.bpm_max > 0) {
-      $('bpm-min').value = Math.floor(donnees.bpm_min);
-      $('bpm-max').value = Math.ceil(donnees.bpm_max);
+    // Les sons choisis n'appartiennent plus à cette collection-ci, comme le set.
+    // `appliquerPin` remet du même coup les bornes de BPM de la collection lue.
+    state.pins = { start: null, end: null };
+    for (const role of ['start', 'end']) {
+      $(`recherche-${role}`).disabled = false;
+      appliquerPin(role);
     }
 
     $('generer').disabled = false;
@@ -295,10 +424,17 @@ async function init() {
   $('seconds').value = state.config.seconds_per_track;
   if (state.config.collection_xml) $('path').value = state.config.collection_xml;
 
+  for (const role of ['start', 'end']) brancherRecherche(role);
+
   $('charger').onclick = chargerCollection;
   $('generer').onclick = generer;
   $('regenerer').onclick = generer;
   $('exporter').onclick = exporter;
+
+  document.addEventListener('click', (evenement) => {
+    if (evenement.target.closest('.recherche')) return;
+    for (const role of ['start', 'end']) $(`resultats-${role}`).hidden = true;
+  });
 }
 
 init();

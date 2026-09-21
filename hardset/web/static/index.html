@@ -43,14 +43,36 @@
           <span>
             <label for="bpm-min">BPM min</label>
             <input type="number" id="bpm-min" value="150" step="1">
+            <span id="note-bpm-min" class="discret" hidden>imposé par le son de départ</span>
           </span>
           <span>
             <label for="bpm-max">BPM max</label>
             <input type="number" id="bpm-max" value="200" step="1">
+            <span id="note-bpm-max" class="discret" hidden>imposé par le son de fin</span>
           </span>
         </div>
       </fieldset>
     </div>
+
+    <fieldset id="epinglage">
+      <legend>Début et fin du set (facultatif)</legend>
+      <div class="deux-colonnes">
+        <div class="recherche">
+          <label for="recherche-start">Son de départ</label>
+          <input type="search" id="recherche-start" placeholder="artiste ou titre…"
+                 autocomplete="off" disabled>
+          <ul id="resultats-start" class="resultats" hidden></ul>
+          <div id="choix-start" class="choix" hidden></div>
+        </div>
+        <div class="recherche">
+          <label for="recherche-end">Son de fin</label>
+          <input type="search" id="recherche-end" placeholder="artiste ou titre…"
+                 autocomplete="off" disabled>
+          <ul id="resultats-end" class="resultats" hidden></ul>
+          <div id="choix-end" class="choix" hidden></div>
+        </div>
+      </div>
+    </fieldset>
 
     <div class="ligne">
       <button id="generer" type="button" class="primaire" disabled>Générer le set</button>

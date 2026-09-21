@@ -33,6 +33,7 @@ h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
 .ligne { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
 .ligne > label { align-self: center; }
 .colonnes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+.deux-colonnes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 
 fieldset { border: 1px solid var(--trait); border-radius: 6px; }
 legend { color: var(--discret); padding: 0 0.4rem; }
@@ -74,5 +75,35 @@ th { color: var(--discret); font-weight: 500; font-size: 0.8rem; text-transform:
 td.actions { text-align: right; white-space: nowrap; }
 td.actions button { padding: 0.15rem 0.45rem; margin-left: 0.2rem; }
 tr.occupe { opacity: 0.4; }
+
+.recherche input[type="search"] { width: 100%; }
+
+.resultats {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--trait);
+  border-radius: 6px;
+  background: #24282f;
+}
+.resultats li { border-bottom: 1px solid var(--trait); }
+.resultats li:last-child { border-bottom: 0; }
+.resultats li.discret { padding: 0.4rem 0.6rem; }
+.resultats button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.resultats button:hover { background: #2c313a; }
+
+.choix { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
+.choix .epingle { flex: 1; }
+
+/* Une borne imposée par un son choisi se voit : elle n'est plus modifiable. */
+input:read-only { opacity: 0.55; }
 
 .export { margin-top: 1rem; }

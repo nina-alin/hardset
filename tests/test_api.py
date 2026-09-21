@@ -748,3 +748,37 @@ def test_l_avertissement_d_epinglage_survit_au_remplacement(client, collection_x
 
     assert donnees["tracks"][0]["id"] == "10"
     assert "pin_off_filters" in {w["code"] for w in donnees["warnings"]}
+
+
+def test_remplacement_avec_epingle_inconnu_renvoie_400(client, collection_xml):
+    # Garde le commit 4a2a453 : `resolve` doit rester dans le `try` de
+    # `/api/replace` pour qu'un épinglage invalide sorte en 400 et non en 500.
+    reponse = client.post(
+        "/api/replace",
+        json=corps(collection_xml, start_track_id="999", track_ids=["0", "1"], position=0),
+    )
+    assert reponse.status_code == 400
+    assert "absent de la collection" in reponse.json()["detail"]
+
+
+def test_remplacement_dun_set_descendant_avec_les_bornes_de_la_page_est_refuse(
+    client, collection_xml
+):
+    # Bornes telles que la page les envoie réellement une fois l'épinglage
+    # fait (bpm_min/bpm_max déjà recopiés depuis les morceaux épinglés) : le
+    # corps exact d'un set descendant sur `/api/replace`.
+    reponse = client.post(
+        "/api/replace",
+        json=corps(
+            collection_xml,
+            start_track_id="30",
+            end_track_id="10",
+            bpm_min=180.0,
+            bpm_max=160.0,
+            track_ids=["0", "1"],
+            position=0,
+        ),
+    )
+    assert reponse.status_code == 400
+    detail = reponse.json()["detail"]
+    assert "plus lent" in detail and "180" in detail and "160" in detail
